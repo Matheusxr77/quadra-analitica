@@ -10,6 +10,30 @@ function destruirGrafico(nome) {
   if (graficos[nome]) graficos[nome].destroy();
 }
 
+// Padrão para todos os gráficos: título, eixos rotulados (com unidade) e legenda.
+function opcoesPadrao({ titulo, eixoX, eixoY, xLinear = false, beginAtZero = false, tooltip }) {
+  const cor = "#8998aa";
+  const opcoes = {
+    maintainAspectRatio: false,
+    scales: {
+      x: { ticks: { color: cor }, grid: xLinear ? { color: "#263546" } : { display: false }, title: { display: true, text: eixoX, color: cor } },
+      y: { ticks: { color: cor }, grid: { color: "#263546" }, beginAtZero, title: { display: true, text: eixoY, color: cor } },
+    },
+    plugins: {
+      title: { display: true, text: titulo, color: "#e6edf5", font: { size: 13, weight: "600" } },
+      legend: { display: true, labels: { color: "#cbd6e1", usePointStyle: true } },
+    },
+  };
+  if (xLinear) opcoes.scales.x.type = "linear";
+  if (tooltip) opcoes.plugins.tooltip = tooltip;
+  return opcoes;
+}
+
+function formatarModas(item) {
+  if (item.amodal) return "amodal";
+  return item.modas.map((valor) => formatar(valor)).join("; ");
+}
+
 function construirCartoes(dados, time) {
   const areaCartoes = document.getElementById("cartoes-resumo");
   if (!areaCartoes) {
@@ -40,7 +64,17 @@ function construirBarras(dados) {
       { label: "Mediana", data: Object.values(dados.comparativo).map((item) => item.mediana), backgroundColor: cores[1], borderRadius: 4 },
       { label: "Moda", data: Object.values(dados.comparativo).map((item) => item.moda), backgroundColor: "#8a7cff", borderRadius: 4 },
     ] },
-    options: { maintainAspectRatio: false, scales: { x: { ticks: { color: "#8998aa" }, grid: { display: false } }, y: { ticks: { color: "#8998aa" }, grid: { color: "#263546" }, beginAtZero: false } }, plugins: { legend: { labels: { color: "#cbd6e1" } } } },
+    options: opcoesPadrao({
+      titulo: `Média, mediana e moda de ${dados.variavel} por time`,
+      eixoX: "Time",
+      eixoY: `${dados.variavel} (${dados.unidade})`,
+      beginAtZero: true,
+      tooltip: { callbacks: { label: (ctx) => {
+        const item = Object.values(dados.comparativo)[ctx.dataIndex];
+        if (ctx.dataset.label === "Moda") return `Moda: ${formatarModas(item)} ${dados.unidade}`;
+        return `${ctx.dataset.label}: ${formatar(ctx.parsed.y)} ${dados.unidade}`;
+      } } },
+    }),
   });
 }
 
@@ -52,24 +86,62 @@ function construirBoxplot(dados) {
   destruirGrafico("boxplot");
   const time = document.getElementById("seletor-time").value;
   const selecionados = time === "Todos" ? dados.comparativo : dados.por_time;
+  const nomes = Object.keys(selecionados);
+  const itens = Object.values(selecionados);
+  const unidade = dados.unidade;
   graficos.boxplot = new Chart(elemento, {
     type: "boxplot",
-    data: { labels: Object.keys(selecionados), datasets: [{
-      label: dados.variavel,
-      backgroundColor: "#55b6ff55",
-      borderColor: cores[0],
-      outlierColor: "#ff7d7d",
-      itemRadius: 2,
-      data: Object.values(selecionados).map((item) => ({
-        min: item.limite_inferior,
-        q1: item.q1,
-        median: item.mediana,
-        q3: item.q3,
-        max: item.limite_superior,
-        outliers: item.outliers,
-      })),
-    }] },
-    options: { maintainAspectRatio: false, scales: { x: { ticks: { color: "#8998aa" }, grid: { display: false } }, y: { ticks: { color: "#8998aa" }, grid: { color: "#263546" } } }, plugins: { legend: { labels: { color: "#cbd6e1" } } } },
+    data: { labels: nomes, datasets: [
+      {
+        label: "Caixa Q1–Q3, mediana, bigodes e outliers",
+        backgroundColor: "#55b6ff55",
+        borderColor: cores[0],
+        outlierBackgroundColor: "#ff7d7d",
+        outlierBorderColor: "#ff7d7d",
+        outlierRadius: 3,
+        meanRadius: 0, // a média é desenhada pelo conjunto "Média" abaixo, com legenda
+        itemRadius: 0,
+        data: itens.map((item) => ({
+          min: item.minimo,
+          q1: item.q1,
+          median: item.mediana,
+          q3: item.q3,
+          max: item.maximo,
+          // Bigodes = valor observado mais extremo dentro de Q1−1,5×IQR e Q3+1,5×IQR.
+          whiskerMin: item.bigode_inferior,
+          whiskerMax: item.bigode_superior,
+          mean: item.media,
+          outliers: item.outliers,
+        })),
+      },
+      {
+        type: "line", label: "Média", showLine: false,
+        pointStyle: "crossRot", pointRadius: 8, pointBorderWidth: 2, borderColor: "#ffd166", backgroundColor: "#ffd166",
+        data: nomes.map((nome, i) => ({ x: nome, y: itens[i].media })),
+      },
+      {
+        type: "line", label: "Moda", showLine: false,
+        pointStyle: "rectRot", pointRadius: 6, borderColor: "#8a7cff", backgroundColor: "#8a7cff",
+        data: nomes.flatMap((nome, i) => itens[i].modas.map((moda) => ({ x: nome, y: moda }))),
+      },
+    ] },
+    options: opcoesPadrao({
+      titulo: `Distribuição de ${dados.variavel} por jogo — boxplot de Tukey (1,5×IQR)`,
+      eixoX: "Time",
+      eixoY: `${dados.variavel} (${unidade})`,
+      tooltip: { callbacks: { label: (ctx) => {
+        const item = itens[nomes.indexOf(ctx.label)] || itens[ctx.dataIndex];
+        if (ctx.dataset.label === "Média") return `Média: ${formatar(ctx.parsed.y)} ${unidade}`;
+        if (ctx.dataset.label === "Moda") return `Moda: ${formatar(ctx.parsed.y)} ${unidade}`;
+        return [
+          `Bigodes: ${formatar(item.bigode_inferior)} a ${formatar(item.bigode_superior)}`,
+          `Q1: ${formatar(item.q1)} · Mediana: ${formatar(item.mediana)} · Q3: ${formatar(item.q3)}`,
+          `Limites de Tukey: ${formatar(item.limite_inferior)} a ${formatar(item.limite_superior)}`,
+          `Média: ${formatar(item.media)} · Moda: ${formatarModas(item)}`,
+          `Outliers: ${item.quantidade_outliers}${item.quantidade_outliers ? ` (${item.outliers.map((v) => formatar(v)).join("; ")})` : ""}`,
+        ];
+      } } },
+    }),
   });
 }
 
@@ -87,7 +159,15 @@ function construirHistograma(dados) {
     item.valores.forEach((valor) => { const faixa = Math.round(valor / 5) * 5; frequencias[faixa] = (frequencias[faixa] || 0) + 1; });
     datasets.push({ label: nome, data: Object.entries(frequencias).map(([x, y]) => ({ x: Number(x), y })), backgroundColor: `${cores[indice]}99`, borderColor: cores[indice], borderWidth: 1 });
   });
-  graficos.histograma = new Chart(elemento, { type: "bar", data: { datasets }, options: { maintainAspectRatio: false, parsing: false, scales: { x: { type: "linear", ticks: { color: "#8998aa" }, title: { display: true, text: "Valor observado", color: "#8998aa" }, grid: { color: "#263546" } }, y: { ticks: { color: "#8998aa" }, title: { display: true, text: "Frequência", color: "#8998aa" }, grid: { color: "#263546" } } }, plugins: { legend: { labels: { color: "#cbd6e1" } } } } });
+  const opcoes = opcoesPadrao({
+    titulo: `Histograma de ${dados.variavel} por jogo (faixas centradas em múltiplos de 5)`,
+    eixoX: `${dados.variavel} (${dados.unidade})`,
+    eixoY: "Frequência (nº de jogos)",
+    xLinear: true,
+    beginAtZero: true,
+  });
+  opcoes.parsing = false;
+  graficos.histograma = new Chart(elemento, { type: "bar", data: { datasets }, options: opcoes });
 }
 
 function construirInterpretacao(dados) {
@@ -99,7 +179,7 @@ function construirInterpretacao(dados) {
   const pacers = selecionados["Indiana Pacers"];
   const lider = mavericks.media >= pacers.media ? "Dallas Mavericks" : "Indiana Pacers";
   const regular = mavericks.cv <= pacers.cv ? "Dallas Mavericks" : "Indiana Pacers";
-  document.getElementById("texto-interpretacao").innerHTML = `<p><strong>${lider}</strong> apresenta a maior média de ${dados.variavel}, com <strong>${formatar(selecionados[lider].media)}</strong> por jogo. A mediana ajuda a evitar que partidas muito fora do padrão distorçam essa leitura.</p><p>Em regularidade relativa, <strong>${regular}</strong> tem o menor CV (${formatar(selecionados[regular].cv_percentual)}%). O CV é adimensional e permite comparar dispersões mesmo quando as métricas possuem escalas diferentes.</p><p>A assimetria é <strong>${dados.comparativo[lider].classificacao_assimetria}</strong>. Como o critério de outlier usa 1,5 × IQR, a leitura central permanece robusta a extremos e deve ser preferida quando média e mediana se afastarem.</p>`;
+  document.getElementById("texto-interpretacao").innerHTML = `<p><strong>${lider}</strong> apresenta a maior média de ${dados.variavel}, com <strong>${formatar(selecionados[lider].media)}</strong> ${dados.unidade}. A mediana ajuda a evitar que partidas muito fora do padrão distorçam essa leitura.</p><p>Em regularidade relativa, <strong>${regular}</strong> tem o menor CV (${formatar(selecionados[regular].cv_percentual)}%). O CV é adimensional e permite comparar dispersões mesmo quando as métricas possuem escalas diferentes.</p><p>A assimetria é <strong>${dados.comparativo[lider].classificacao_assimetria}</strong>. Como o critério de outlier usa 1,5 × IQR, a leitura central permanece robusta a extremos e deve ser preferida quando média e mediana se afastarem.</p>`;
 }
 
 async function atualizarPainel() {
@@ -114,6 +194,40 @@ async function atualizarPainel() {
   const dados = await resposta.json();
   document.getElementById("titulo-metrica").textContent = variavel;
   construirCartoes(dados, time); construirBarras(dados); construirBoxplot(dados); construirHistograma(dados); construirInterpretacao(dados);
+  destacarLinhasDescritivas(variavel);
+}
+
+function destacarLinhasDescritivas(variavel) {
+  document.querySelectorAll("#corpo-tabela-descritiva tr[data-variavel]").forEach((linha) => {
+    linha.classList.toggle("linha-destacada", linha.dataset.variavel === variavel);
+  });
+}
+
+function descreverOutliers(item) {
+  if (!item.quantidade_outliers) return "—";
+  return item.outliers_detalhe.map((o) => {
+    const jogo = [o.data, o.confronto].filter(Boolean).map(escaparHtml).join(" · ");
+    return `<span class="outlier-item"><b>${formatar(o.valor)}</b>${jogo ? ` <small>(${jogo})</small>` : ""}</span>`;
+  }).join("");
+}
+
+async function carregarTabelaDescritiva() {
+  const corpo = document.getElementById("corpo-tabela-descritiva");
+  if (!corpo) {
+    return;
+  }
+  const resposta = await fetch("/api/descritivas");
+  const dados = await resposta.json();
+  const num = (valor) => `<td class="num">${formatar(valor)}</td>`;
+  corpo.innerHTML = dados.variaveis.map((grupo) => dados.times.map((time, indice) => {
+    const item = grupo.times[time];
+    const celulaVariavel = indice === 0
+      ? `<td rowspan="${dados.times.length}" class="celula-variavel"><strong>${escaparHtml(grupo.variavel)}</strong><small>${escaparHtml(grupo.unidade)}</small></td>`
+      : "";
+    return `<tr data-variavel="${escaparHtml(grupo.variavel)}" class="${indice === 0 ? "inicio-grupo" : ""}">${celulaVariavel}<td>${escaparHtml(time)}</td><td class="num">${item.n}</td>${num(item.media)}${num(item.mediana)}<td class="num">${formatarModas(item)}</td>${num(item.minimo)}${num(item.maximo)}${num(item.amplitude)}${num(item.desvio_padrao)}${num(item.variancia)}${num(item.q1)}${num(item.q3)}${num(item.iqr)}<td class="num">${formatar(item.limite_inferior)} a ${formatar(item.limite_superior)}</td><td class="num">${item.quantidade_outliers}</td><td class="outliers">${descreverOutliers(item)}</td></tr>`;
+  }).join("")).join("");
+  const seletorVariavel = document.getElementById("seletor-variavel");
+  if (seletorVariavel) destacarLinhasDescritivas(seletorVariavel.value);
 }
 
 async function carregarQualidade() {
@@ -193,3 +307,4 @@ if (seletorTime && seletorVariavel) {
 atualizarPainel();
 carregarQualidade();
 carregarDicionario();
+carregarTabelaDescritiva();

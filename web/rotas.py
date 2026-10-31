@@ -53,6 +53,10 @@ def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
     def api_qualidade():
         return jsonify(servico.qualidade())
 
+    @rotas.get("/api/descritivas")
+    def api_descritivas():
+        return jsonify(servico.tabela_descritiva())
+
     @rotas.get("/api/estatisticas")
     def api_estatisticas():
         time = request.args.get("time", "Todos", type=str).strip()

@@ -58,6 +58,16 @@ MAPA_VARIAVEIS = {
     "FG3M": "FG3M",
 }
 
+UNIDADES = {
+    "Pontos": "pontos por jogo",
+    "Rebotes": "rebotes por jogo",
+    "Assistências": "assistências por jogo",
+    "STL": "roubos de bola por jogo",
+    "BLK": "tocos por jogo",
+    "PF": "faltas por jogo",
+    "FG3M": "cestas de 3 por jogo",
+}
+
 METADADOS_CAMPOS = {
     "PTS": ("Desempenho", "Pontos marcados no jogo.", "Variável principal de pontuação."),
     "REB": ("Desempenho", "Rebotes totais no jogo.", "Combina rebotes ofensivos e defensivos."),
@@ -118,18 +128,29 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
     quartil_3 = float(serie.quantile(0.75, interpolation="linear"))
     media = float(serie.mean())
     desvio = float(serie.std(ddof=1))
-    moda = serie.mode()
-    valor_moda = float(moda.iloc[0]) if not moda.empty else None
+    contagens = serie.value_counts()
+    # Se nenhum valor se repete, a série é amodal: todos seriam "moda".
+    amodal = contagens.empty or int(contagens.max()) == 1
+    modas = [] if amodal else sorted(
+        float(valor) for valor in contagens[contagens == contagens.max()].index
+    )
+    valor_moda = modas[0] if modas else None
     assimetria = float(serie.skew()) if len(serie) > 2 else 0.0
     limite_inferior = quartil_1 - 1.5 * (quartil_3 - quartil_1)
     limite_superior = quartil_3 + 1.5 * (quartil_3 - quartil_1)
-    valores_atipicos = serie[(serie < limite_inferior) | (serie > limite_superior)]
+    mascara_atipicos = (serie < limite_inferior) | (serie > limite_superior)
+    valores_atipicos = serie[mascara_atipicos].sort_values()
+    # Bigodes de Tukey: vão até o valor OBSERVADO mais extremo que ainda está
+    # dentro dos limites, e não até os limites em si.
+    dentro = serie[~mascara_atipicos]
     cv = desvio / media if media > 0 else None
     return {
         "n": int(serie.size),
         "media": media,
         "mediana": float(serie.median()),
         "moda": valor_moda,
+        "modas": modas,
+        "amodal": amodal,
         "minimo": float(serie.min()),
         "maximo": float(serie.max()),
         "amplitude": float(serie.max() - serie.min()),
@@ -140,6 +161,8 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
         "iqr": quartil_3 - quartil_1,
         "limite_inferior": limite_inferior,
         "limite_superior": limite_superior,
+        "bigode_inferior": float(dentro.min()),
+        "bigode_superior": float(dentro.max()),
         "outliers": [float(valor) for valor in valores_atipicos],
         "quantidade_outliers": int(valores_atipicos.size),
         "assimetria": assimetria,
@@ -147,6 +170,52 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
         "cv": cv,
         "cv_percentual": cv * 100 if cv is not None else None,
     }
+
+
+def _detalhar_outliers(
+    dados: pd.DataFrame, serie: pd.Series, outliers_idx: pd.Index
+) -> list[dict[str, Any]]:
+    """Identifica em quais jogos ocorreram os valores atípicos."""
+    detalhes = []
+    for indice in outliers_idx:
+        linha = dados.loc[indice]
+        data = linha.get("GAME_DATE")
+        detalhes.append({
+            "valor": float(serie.loc[indice]),
+            "data": data.strftime("%d/%m/%Y") if pd.notna(data) else None,
+            "confronto": str(linha.get("MATCHUP", "")) or None,
+        })
+    return detalhes
+
+
+def _estatisticas_com_jogos(
+    dados: pd.DataFrame, time: str, variavel: str
+) -> dict[str, Any]:
+    serie = _valores(dados, time, variavel)
+    resultado = _estatisticas_de_serie(serie)
+    atipicos = serie[
+        (serie < resultado["limite_inferior"]) | (serie > resultado["limite_superior"])
+    ].sort_values()
+    resultado["outliers_detalhe"] = _detalhar_outliers(dados, serie, atipicos.index)
+    resultado["valores"] = _serie_para_grafico(serie)
+    return resultado
+
+
+def calcular_tabela_descritiva(dados: pd.DataFrame) -> dict[str, Any]:
+    """Tabela completa de medidas descritivas: cada variável × cada time."""
+    variaveis = []
+    for variavel in VARIAVEIS_ANALISADAS:
+        times = {}
+        for time in TIMES_ANALISADOS:
+            estatisticas = _estatisticas_com_jogos(dados, time, variavel)
+            estatisticas.pop("valores")
+            times[time] = estatisticas
+        variaveis.append({
+            "variavel": variavel,
+            "unidade": UNIDADES[variavel],
+            "times": times,
+        })
+    return {"times": TIMES_ANALISADOS, "variaveis": variaveis}
 
 
 def _serie_para_grafico(serie: pd.Series) -> list[float]:
@@ -160,20 +229,18 @@ def calcular_estatisticas(
     if variavel not in VARIAVEIS_ANALISADAS:
         variavel = VARIAVEIS_ANALISADAS[0]
     times = ["Todos"] if time == "Todos" else [time]
-    por_time = {}
-    for nome_time in times:
-        serie = _valores(dados, nome_time, variavel)
-        por_time[nome_time] = _estatisticas_de_serie(serie)
-        por_time[nome_time]["valores"] = _serie_para_grafico(serie)
-    comparativo = {}
-    for nome_time in TIMES_ANALISADOS:
-        serie = _valores(dados, nome_time, variavel)
-        comparativo[nome_time] = _estatisticas_de_serie(serie)
-        comparativo[nome_time]["valores"] = _serie_para_grafico(serie)
+    por_time = {
+        nome_time: _estatisticas_com_jogos(dados, nome_time, variavel)
+        for nome_time in times
+    }
+    comparativo = {
+        nome_time: _estatisticas_com_jogos(dados, nome_time, variavel)
+        for nome_time in TIMES_ANALISADOS
+    }
     return {
         "time": time,
         "variavel": variavel,
-        "unidade": "jogos",
+        "unidade": UNIDADES[variavel],
         "por_time": por_time,
         "comparativo": comparativo,
     }

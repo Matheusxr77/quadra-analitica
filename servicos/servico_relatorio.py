@@ -10,6 +10,7 @@ from analise import (
     calcular_dicionario,
     calcular_estatisticas,
     calcular_qualidade,
+    calcular_tabela_descritiva,
 )
 from excecoes import ErroAplicacao
 from infraestrutura.repositorio_dados import RepositorioDados
@@ -27,6 +28,9 @@ class ServicoRelatorio:
         if variavel not in VARIAVEIS_ANALISADAS:
             raise ErroAplicacao("A variável informada não está disponível no relatório.")
         return calcular_estatisticas(self._obter_dados(), time, variavel)
+
+    def tabela_descritiva(self) -> dict[str, Any]:
+        return calcular_tabela_descritiva(self._obter_dados())
 
     def dicionario(self) -> dict[str, Any]:
         return calcular_dicionario(self._obter_dados())
