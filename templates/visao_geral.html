@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Visão geral{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">ANÁLISE DE TEMPORADA REGULAR</p><h1>Performance em quadra</h1><p class="subtitulo">Uma leitura estatística dos <strong>Dallas Mavericks</strong> e <strong>Indiana Pacers</strong>.</p></div><div class="status"><i></i> Dataset processado</div></header>
+<section class="controles painel"><div><label for="seletor-time">TIME</label><select id="seletor-time"><option>Todos</option>{% for time in times %}<option>{{ time }}</option>{% endfor %}</select></div><div><label for="seletor-variavel">MÉTRICA DE JOGO</label><select id="seletor-variavel">{% for variavel in variaveis %}<option>{{ variavel }}</option>{% endfor %}</select></div><div class="nota-controle">Use os filtros para atualizar a leitura principal.</div></section>
+<section id="visao-geral"><div class="titulo-secao"><div><p class="sobrelinha">LEITURA PRINCIPAL</p><h2 id="titulo-metrica">Pontos</h2></div><span class="badge">n = jogos observados</span></div><div id="cartoes-resumo" class="grade-cartoes"></div></section>
+<section class="painel chamada-pagina"><p class="sobrelinha">EXPLORAÇÃO DETALHADA</p><h2>Veja a distribuição completa no comparativo</h2><p>Explore boxplot, histograma, tendência central e interpretação estatística em uma página dedicada.</p><a class="botao-principal" href="{{ url_for('relatorio.pagina_comparativo') }}">Abrir comparativo →</a></section>
+{% endblock %}

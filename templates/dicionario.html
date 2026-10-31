@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Dicionário{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">APÊNDICE</p><h1>Dicionário de dados</h1><p class="subtitulo">Campos disponíveis, tipos tratados e significado no contexto da análise.</p></div><div class="status"><i></i> Estrutura documentada</div></header>
+<section class="painel pagina-introducao"><p id="resumo-dicionario">Carregando estrutura da base...</p></section>
+<section class="grade-dicionario-cards" id="cards-dicionario"></section>
+<section class="painel ferramentas-dicionario">
+  <div class="campo-pesquisa"><label for="pesquisa-dicionario">PESQUISAR CAMPO OU SIGNIFICADO</label><input id="pesquisa-dicionario" type="search" placeholder="Ex.: pontos, data, defesa..."></div>
+  <div><label for="filtro-tipo-dicionario">TIPO DE DADO</label><select id="filtro-tipo-dicionario"><option value="">Todos os tipos</option></select></div>
+  <div><label for="filtro-categoria-dicionario">CATEGORIA</label><select id="filtro-categoria-dicionario"><option value="">Todas as categorias</option></select></div>
+  <span class="contador-filtros" id="contador-dicionario"></span>
+</section>
+<section class="painel tabela-rolagem"><table><thead><tr><th>Campo</th><th>Apresentação</th><th>Tipo</th><th>Categoria</th><th>Ausentes</th><th>Detalhes</th></tr></thead><tbody id="tabela-dicionario"></tbody></table><div class="estado-vazio" id="estado-vazio-dicionario">Nenhum campo corresponde aos filtros.</div></section>
+{% endblock %}

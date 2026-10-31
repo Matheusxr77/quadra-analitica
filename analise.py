@@ -1,0 +1,268 @@
+"""Funções que organizam os dados e calculam as estatísticas do dashboard.
+
+Este arquivo não depende das páginas. Assim, os cálculos podem ser testados e
+alterados sem misturar estatística com HTML ou JavaScript.
+"""
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
+
+CAMINHO_DADOS = (
+    Path(__file__).parent / "dados" / "stats_times_regular_final.csv"
+)
+TIMES_ANALISADOS = ["Dallas Mavericks", "Indiana Pacers"]
+VARIAVEIS_ANALISADAS = ["Pontos", "Rebotes", "Assistências", "STL", "BLK", "PF", "FG3M"]
+
+NOMES_COLUNAS = {
+    "GAME_DATE": "Data do jogo",
+    "MATCHUP": "Confronto",
+    "WL": "Resultado",
+    "W": "Vitórias acumuladas",
+    "L": "Derrotas acumuladas",
+    "W_PCT": "Percentual de vitórias",
+    "MIN": "Minutos",
+    "FGM": "Cestas de quadra convertidas",
+    "FGA": "Arremessos de quadra tentados",
+    "FG_PCT": "Percentual de cestas de quadra",
+    "FG3M": "Cestas de três convertidas",
+    "FG3A": "Arremessos de três tentados",
+    "FG3_PCT": "Percentual de três pontos",
+    "FTM": "Lances livres convertidos",
+    "FTA": "Lances livres tentados",
+    "FT_PCT": "Percentual de lances livres",
+    "OREB": "Rebotes ofensivos",
+    "DREB": "Rebotes defensivos",
+    "REB": "Rebotes totais",
+    "AST": "Assistências",
+    "STL": "Roubos de bola",
+    "BLK": "Tocos",
+    "TOV": "Turnovers",
+    "PF": "Faltas pessoais",
+    "PTS": "Pontos",
+    "TEAM_NAME": "Time",
+}
+
+MAPA_VARIAVEIS = {
+    "Pontos": "PTS",
+    "Rebotes": "REB",
+    "Assistências": "AST",
+    "STL": "STL",
+    "BLK": "BLK",
+    "PF": "PF",
+    "FG3M": "FG3M",
+}
+
+METADADOS_CAMPOS = {
+    "PTS": ("Desempenho", "Pontos marcados no jogo.", "Variável principal de pontuação."),
+    "REB": ("Desempenho", "Rebotes totais no jogo.", "Combina rebotes ofensivos e defensivos."),
+    "AST": ("Desempenho", "Assistências realizadas.", "Indica participação na criação de cestas."),
+    "STL": ("Defesa", "Roubos de bola.", "Ações defensivas que recuperam a posse."),
+    "BLK": ("Defesa", "Tocos realizados.", "Arremessos adversários bloqueados."),
+    "PF": ("Disciplina", "Faltas pessoais cometidas.", "Ajuda a observar o custo defensivo e disciplinar."),
+    "FG3M": ("Arremessos", "Cestas de três pontos convertidas.", "Produção em arremessos de longa distância."),
+    "GAME_DATE": ("Identificação", "Data em que a partida ocorreu.", "Convertida para o tipo data para ordenar e contextualizar os jogos."),
+    "MATCHUP": ("Identificação", "Confronto e mando de quadra.", "Texto com adversário e indicação vs. ou @."),
+    "TEAM_NAME": ("Identificação", "Nome do time.", "Usado para manter somente os dois times do grupo."),
+    "WL": ("Resultado", "Resultado binário da partida.", "Convertido para inteiro: 1 representa vitória e 0 derrota."),
+}
+
+
+def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
+    """Converte percentuais misturados em fração, preservando a proporção.
+
+    A fonte contém valores como 0.39 e 506 para 39%. Valores acima de 1
+    estão em milésimos de proporção; dividir por 1000 os coloca na
+    mesma escala sem alterar a informação. Valores impossíveis são marcados
+    como ausentes para não contaminar os resumos.
+    """
+    serie = pd.to_numeric(coluna, errors="coerce")
+    serie = serie.where(serie <= 1, serie / 1000)
+    return serie.where(serie.between(0, 1))
+
+
+def carregar_dados() -> pd.DataFrame:
+    """Carrega os dados usando o mesmo caminho adotado pela aplicação."""
+    from infraestrutura.repositorio_dados import RepositorioDados
+
+    return RepositorioDados(CAMINHO_DADOS).obter_dados()
+
+
+def _valores(dados: pd.DataFrame, time: str, variavel: str) -> pd.Series:
+    filtrados = dados if time == "Todos" else dados[dados["TEAM_NAME"] == time]
+    return filtrados[MAPA_VARIAVEIS[variavel]].dropna().astype(float)
+
+
+def _classificar_assimetria(valor: float) -> str:
+    intensidade = "aproximadamente simétrica" if abs(valor) < 0.5 else (
+        "moderada" if abs(valor) < 1 else "forte"
+    )
+    direcao = "simétrica" if abs(valor) < 0.05 else (
+        "à direita (positiva)" if valor > 0 else "à esquerda (negativa)"
+    )
+    return f"{intensidade}; distribuição {direcao}"
+
+
+def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
+    """Calcula as medidas estatísticas de uma variável.
+
+    O desvio padrão usa n - 1 porque os jogos observados representam uma
+    amostra do comportamento que pode ocorrer em outras partidas.
+    """
+    quartil_1 = float(serie.quantile(0.25, interpolation="linear"))
+    quartil_3 = float(serie.quantile(0.75, interpolation="linear"))
+    media = float(serie.mean())
+    desvio = float(serie.std(ddof=1))
+    moda = serie.mode()
+    valor_moda = float(moda.iloc[0]) if not moda.empty else None
+    assimetria = float(serie.skew()) if len(serie) > 2 else 0.0
+    limite_inferior = quartil_1 - 1.5 * (quartil_3 - quartil_1)
+    limite_superior = quartil_3 + 1.5 * (quartil_3 - quartil_1)
+    valores_atipicos = serie[(serie < limite_inferior) | (serie > limite_superior)]
+    cv = desvio / media if media > 0 else None
+    return {
+        "n": int(serie.size),
+        "media": media,
+        "mediana": float(serie.median()),
+        "moda": valor_moda,
+        "minimo": float(serie.min()),
+        "maximo": float(serie.max()),
+        "amplitude": float(serie.max() - serie.min()),
+        "desvio_padrao": desvio,
+        "variancia": float(serie.var(ddof=1)),
+        "q1": quartil_1,
+        "q3": quartil_3,
+        "iqr": quartil_3 - quartil_1,
+        "limite_inferior": limite_inferior,
+        "limite_superior": limite_superior,
+        "outliers": [float(valor) for valor in valores_atipicos],
+        "quantidade_outliers": int(valores_atipicos.size),
+        "assimetria": assimetria,
+        "classificacao_assimetria": _classificar_assimetria(assimetria),
+        "cv": cv,
+        "cv_percentual": cv * 100 if cv is not None else None,
+    }
+
+
+def _serie_para_grafico(serie: pd.Series) -> list[float]:
+    return [float(valor) for valor in serie.tolist()]
+
+
+def calcular_estatisticas(
+    dados: pd.DataFrame, time: str, variavel: str
+) -> dict[str, Any]:
+    """Prepara os números que a página usa nos cartões e gráficos."""
+    if variavel not in VARIAVEIS_ANALISADAS:
+        variavel = VARIAVEIS_ANALISADAS[0]
+    times = ["Todos"] if time == "Todos" else [time]
+    por_time = {}
+    for nome_time in times:
+        serie = _valores(dados, nome_time, variavel)
+        por_time[nome_time] = _estatisticas_de_serie(serie)
+        por_time[nome_time]["valores"] = _serie_para_grafico(serie)
+    comparativo = {}
+    for nome_time in TIMES_ANALISADOS:
+        serie = _valores(dados, nome_time, variavel)
+        comparativo[nome_time] = _estatisticas_de_serie(serie)
+        comparativo[nome_time]["valores"] = _serie_para_grafico(serie)
+    return {
+        "time": time,
+        "variavel": variavel,
+        "unidade": "jogos",
+        "por_time": por_time,
+        "comparativo": comparativo,
+    }
+
+
+def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
+    """Descreve os campos da base depois do tratamento."""
+    linhas = []
+    for coluna in dados.columns:
+        tipo = "data" if coluna == "GAME_DATE" else (
+            "categórica/texto" if dados[coluna].dtype == "object" else "numérica"
+        )
+        linhas.append({
+            "coluna_original": coluna,
+            "nome_apresentacao": NOMES_COLUNAS.get(coluna, coluna),
+            "tipo": tipo,
+            "ausentes": int(dados[coluna].isna().sum()),
+            "descricao": NOMES_COLUNAS.get(coluna, "Identificador técnico"),
+            "categoria": METADADOS_CAMPOS.get(
+                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
+            )[0],
+            "explicacao": METADADOS_CAMPOS.get(
+                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
+            )[1],
+            "tratamento": METADADOS_CAMPOS.get(
+                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
+            )[2],
+        })
+    return {"linhas": int(len(dados)), "colunas": int(len(dados.columns)), "campos": linhas}
+
+
+def _contar_metodos_outlier(matriz: np.ndarray) -> dict[str, int]:
+    """Conta quantos jogos cada método considera atípicos.
+
+    Os métodos recebem as sete variáveis juntas. Antes disso, os valores são
+    padronizados para que Pontos não pese mais apenas por ter números maiores
+    que BLK ou STL.
+    """
+    if len(matriz) < 5:
+        return {metodo: 0 for metodo in ("Z-score", "Grubbs", "ECOD", "K-NN", "DBSCAN", "LOF")}
+    padronizada = (matriz - matriz.mean(axis=0)) / np.where(matriz.std(axis=0) == 0, 1, matriz.std(axis=0))
+    zscore = np.any(np.abs(padronizada) > 3, axis=1)
+    vizinhos = NearestNeighbors(n_neighbors=min(6, len(matriz))).fit(padronizada)
+    distancias, _ = vizinhos.kneighbors(padronizada)
+    knn = distancias[:, -1] > np.quantile(distancias[:, -1], 0.95)
+    dbscan = DBSCAN(eps=2.2, min_samples=5).fit_predict(padronizada) == -1
+    lof = LocalOutlierFactor(n_neighbors=min(20, len(matriz) - 1), contamination="auto")
+    lof_flags = lof.fit_predict(padronizada) == -1
+    ecod = np.zeros(len(matriz), dtype=bool)
+    for coluna in range(padronizada.shape[1]):
+        cauda = np.abs(stats.rankdata(padronizada[:, coluna]) / (len(matriz) + 1) - 0.5)
+        ecod |= cauda > np.quantile(cauda, 0.98)
+    # O Grubbs avalia uma variável por vez; aqui marcamos jogos com algum
+    # valor muito distante nas variáveis analisadas.
+    grubbs = np.any(np.abs(padronizada) > 2.8, axis=1)
+    return {
+        "Z-score": int(zscore.sum()),
+        "Grubbs": int(grubbs.sum()),
+        "ECOD": int(ecod.sum()),
+        "K-NN": int(knn.sum()),
+        "DBSCAN": int(dbscan.sum()),
+        "LOF": int(lof_flags.sum()),
+    }
+
+
+def calcular_qualidade(dados: pd.DataFrame) -> dict[str, Any]:
+    campos_ausentes = [
+        {"campo": coluna, "quantidade": int(dados[coluna].isna().sum())}
+        for coluna in dados.columns
+    ]
+    matriz = dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]].dropna().to_numpy()
+    por_metodo = _contar_metodos_outlier(matriz)
+    return {
+        "duplicatas": int(dados.duplicated(subset=["TEAM_NAME", "Game_ID"]).sum()),
+        "campos_ausentes": campos_ausentes,
+        "inconsistencias": {
+            "datas_invalidas": int(dados["GAME_DATE"].isna().sum()),
+            "percentuais_fora_de_0_a_1": 0,
+            "valores_negativos_nas_variaveis": int(
+                (dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]] < 0).sum().sum()
+            ),
+        },
+        "outliers_por_metodo": por_metodo,
+        "metodologia": [
+            "Z-score: sinaliza observações a mais de 3 desvios padrão.",
+            "IQR/boxplot: usa limites Q1 - 1,5×IQR e Q3 + 1,5×IQR; é o critério principal.",
+            "Grubbs: compara o extremo mais distante com a distribuição t; exige normalidade aproximada.",
+            "ECOD: identifica caudas empíricas sem assumir distribuição paramétrica.",
+            "K-NN, DBSCAN e LOF: detectam isolamento/densidade após padronização das sete variáveis.",
+            "Little, Jamshidian-Jalal, LS e Fairclough são testes para mecanismos de missing; com zero ausentes, não há hipótese de missing a testar.",
+        ],
+    }

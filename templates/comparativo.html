@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Comparativo{% endblock %}
+{% block bibliotecas %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script><script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.2.0/build/index.umd.min.js"></script>{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">ANÁLISE COMPARATIVA</p><h1>Distribuição por jogo</h1><p class="subtitulo">Compare as métricas dos dois times com medidas robustas e de tendência central.</p></div><div class="status"><i></i> Atualização interativa</div></header>
+<section class="controles painel"><div><label for="seletor-time">TIME</label><select id="seletor-time"><option>Todos</option>{% for time in times %}<option>{{ time }}</option>{% endfor %}</select></div><div><label for="seletor-variavel">MÉTRICA DE JOGO</label><select id="seletor-variavel">{% for variavel in variaveis %}<option>{{ variavel }}</option>{% endfor %}</select></div><div class="nota-controle">A métrica selecionada atualiza todos os gráficos.</div></section>
+<div class="titulo-secao"><div><p class="sobrelinha">MÉTRICA SELECIONADA</p><h2 id="titulo-metrica">Pontos</h2></div></div>
+<section class="grade-graficos"><article class="painel"><div class="cabecalho-painel"><div><h3>Distribuição por jogo</h3><p>Boxplot, mediana, quartis e outliers</p></div></div><div class="area-grafico"><canvas id="grafico-boxplot"></canvas></div></article><article class="painel"><div class="cabecalho-painel"><div><h3>Tendência central</h3><p>Média, mediana e moda</p></div></div><div class="area-grafico"><canvas id="grafico-barras"></canvas></div></article></section>
+<section class="grade-graficos"><article class="painel"><div class="cabecalho-painel"><div><h3>Assimetria observada</h3><p>Histograma por faixa de valor</p></div></div><div class="area-grafico"><canvas id="grafico-histograma"></canvas></div></article><article class="painel leitura"><div class="cabecalho-painel"><div><h3>Interpretação</h3><p>Leitura estatística da métrica</p></div></div><div id="texto-interpretacao"></div></article></section>
+{% endblock %}

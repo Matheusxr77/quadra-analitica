@@ -1,0 +1,43 @@
+# Ambientes virtuais e configurações locais
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+
+# Cache e artefatos do Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Ferramentas e arquivos locais do editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs, arquivos temporários e saídas locais
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Base derivada: é recriada automaticamente a partir do CSV original
+/dados/estatisticas_times_selecionados.csv
+
+# Documentos de apoio da disciplina, não necessários para executar a aplicação
+*.pdf
+
+# Sistemas operacionais
+.DS_Store
+Thumbs.db
+desktop.ini
