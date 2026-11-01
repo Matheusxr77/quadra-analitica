@@ -193,16 +193,24 @@ function construirHistograma(dados) {
   graficos.histograma = new Chart(elemento, { type: "bar", data: { datasets }, options: opcoes });
 }
 
+// Seções de texto vindas do servidor: interpretação (com números) e, à parte,
+// a metodologia (fórmulas, definições e convenções) — mesmo formato em todas as páginas.
+function renderizarSecoes(secoes, numerar = true) {
+  return secoes.map((secao, i) => {
+    const titulo = `<h4>${numerar ? `${i + 1}. ` : ""}${escaparHtml(secao.titulo)}</h4>`;
+    const paragrafos = (secao.paragrafos || []).map((p) => `<p>${escaparHtml(p)}</p>`).join("");
+    const metodo = (secao.metodologia || []).map((m) => `<p class="nota-metodo"><span>Método</span> ${escaparHtml(m)}</p>`).join("");
+    return `<div class="secao-texto">${titulo}${paragrafos}${metodo}</div>`;
+  }).join("");
+}
+
+// Comparativo: texto gerado no servidor para o time e a variável selecionados.
 function construirInterpretacao(dados) {
-  if (!document.getElementById("texto-interpretacao")) {
+  const area = document.getElementById("texto-interpretacao");
+  if (!area) {
     return;
   }
-  const selecionados = dados.comparativo;
-  const mavericks = selecionados["Dallas Mavericks"];
-  const pacers = selecionados["Indiana Pacers"];
-  const lider = mavericks.media >= pacers.media ? "Dallas Mavericks" : "Indiana Pacers";
-  const regular = mavericks.cv <= pacers.cv ? "Dallas Mavericks" : "Indiana Pacers";
-  document.getElementById("texto-interpretacao").innerHTML = `<p><strong>${lider}</strong> apresenta a maior média de ${dados.variavel}, com <strong>${formatar(selecionados[lider].media)}</strong> ${dados.unidade}. A mediana ajuda a evitar que partidas muito fora do padrão distorçam essa leitura.</p><p>Em regularidade relativa, <strong>${regular}</strong> tem o menor CV (${formatar(selecionados[regular].cv_percentual)}%). O CV é adimensional e permite comparar dispersões mesmo quando as métricas possuem escalas diferentes.</p><p>A assimetria é <strong>${dados.comparativo[lider].classificacao_assimetria}</strong>. Como o critério de outlier usa 1,5 × IQR, a leitura central permanece robusta a extremos e deve ser preferida quando média e mediana se afastarem.</p>`;
+  area.innerHTML = renderizarSecoes(dados.interpretacao || [], false);
 }
 
 async function atualizarPainel() {
@@ -321,6 +329,8 @@ async function carregarQualidade() {
     cartaoTexto(`${m.sigla} — ${m.nome}`, "", [["Definição", m.definicao], ["Exemplo na NBA", m.exemplo], ["Consequência", m.consequencia]])).join("");
 
   // 3. Testes + demonstração
+  const motivo = document.getElementById("q-motivo-testes");
+  if (motivo) motivo.textContent = dados.motivo_testes;
   document.getElementById("q-testes").innerHTML = dados.testes_ausencia.map((t) =>
     `<div class="cartao-texto"><h4>${escaparHtml(t.nome)}</h4><p class="cartao-sub">${escaparHtml(t.referencia)}</p>${t.paragrafos.map((p) => `<p class="cartao-paragrafo">${escaparHtml(p)}</p>`).join("")}<dl>${[["Hipóteses", t.hipotese], ["Estatística", t.estatistica], ["Decisão", t.decisao], ["Limitações", t.limitacoes], ["Neste site", t.implementado ? "Implementado; usado apenas no exemplo didático abaixo." : "Apresentado em teoria (não implementado)."]].map(([r, v]) => `<dt>${r}</dt><dd>${escaparHtml(v)}</dd>`).join("")}</dl></div>`).join("");
   const demo = dados.demonstracao;
@@ -469,8 +479,7 @@ async function carregarQualidade() {
   document.getElementById("q-metodos").innerHTML = dados.metodos.map((m) =>
     `<div class="cartao-texto"><h4>${escaparHtml(m.nome)} <span class="etiqueta-classe">${escaparHtml(m.tipo)}</span></h4><div class="formula formula-secundaria">${escaparHtml(m.formula)}</div><dl><dt>Ideia</dt><dd>${escaparHtml(m.como)}</dd><dt>Premissas</dt><dd>${escaparHtml(m.premissas)}</dd><dt>Parâmetros</dt><dd>${escaparHtml(m.parametros)}</dd></dl></div>`).join("");
 
-  document.getElementById("interpretacao-qualidade").innerHTML = dados.secoes.map((secao, i) =>
-    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`).join("");
+  document.getElementById("interpretacao-qualidade").innerHTML = renderizarSecoes(dados.secoes);
 }
 
 async function carregarDicionario() {
@@ -630,7 +639,7 @@ const CONFIG_MEDIDAS = {
       ["Média", (l) => formatar(l.media), true],
       ["DP (n − 1)", (l) => formatar(l.desvio_padrao), true],
       ["CV", (l) => pct(l.cv_percentual), true],
-      ["Leitura", (l) => `<span class="etiqueta-classe classe-${l.classe}">${escaparHtml(l.classe)}</span>`],
+      ["Leitura", (l) => `<span class="etiqueta-classe classe-${l.classe.split(" ")[0]}">${escaparHtml(l.classe)}</span>`],
       ["Validade", (l, d) => (l.cautela ? `<span class="aviso">cautela: média &lt; ${formatar(d.media_minima, 0)}</span>` : "adequado")],
       ["Piso Poisson", (l) => pct(l.cv_poisson_ref), true],
       ["CV IQR/Mediana", (l) => pct(l.cv_robusto_iqr), true],
@@ -708,9 +717,7 @@ async function carregarMedida() {
     + dados.linhas.map((linha, indice) => `<tr class="${indice % dados.times.length === 0 ? "inicio-grupo" : ""}">${config.detalhe.map(([, valor, num]) => `<td${num ? " class=\"num\"" : ""}>${valor(linha, dados)}</td>`).join("")}</tr>`).join("")
     + "</tbody>";
 
-  document.getElementById("interpretacao-medida").innerHTML = dados.secoes.map((secao, i) =>
-    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`
-  ).join("");
+  document.getElementById("interpretacao-medida").innerHTML = renderizarSecoes(dados.secoes);
 
   const canvas = document.getElementById("grafico-medida");
   if (canvas && typeof Chart !== "undefined") {
@@ -756,7 +763,8 @@ async function carregarPerfilZ() {
   });
   destruirGrafico("zscore");
   graficos.zscore = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
-  document.getElementById("texto-zscore").innerHTML = dados.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("");
+  document.getElementById("texto-zscore").innerHTML = dados.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")
+    + dados.metodologia.map((m) => `<p class="nota-metodo"><span>Método</span> ${escaparHtml(m)}</p>`).join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -776,13 +784,12 @@ async function carregarSintese() {
       celulas: [
         i % dados.times.length === 0 ? `<strong>${escaparHtml(l.variavel)}</strong><small class="unidade">${escaparHtml(l.unidade)}</small>` : "",
         escaparHtml(l.time), formatar(l.media), formatar(l.mediana), formatar(l.desvio_padrao),
-        `${formatar(l.cv_percentual)} <span class="etiqueta-classe classe-${l.classe_cv}">${escaparHtml(l.classe_cv)}</span>`,
+        `${formatar(l.cv_percentual)} <span class="etiqueta-classe classe-${l.classe_cv.split(" ")[0]}">${escaparHtml(l.classe_cv)}</span>`,
         formatar(l.assimetria), `<span class="etiqueta-classe classe-${l.intensidade_assimetria.split(" ")[0]}">${escaparHtml(l.intensidade_assimetria)}</span>`,
         formatar(l.iqr), l.quantidade_outliers, formatar(l.z),
       ],
     })));
-  document.getElementById("interpretacao-sintese").innerHTML = dados.secoes.map((secao, i) =>
-    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`).join("");
+  document.getElementById("interpretacao-sintese").innerHTML = renderizarSecoes(dados.secoes);
 }
 
 carregarPerfilZ();

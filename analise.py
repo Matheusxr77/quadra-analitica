@@ -4,6 +4,7 @@ Este arquivo não depende das páginas. Assim, os cálculos podem ser testados e
 alterados sem misturar estatística com HTML ou JavaScript.
 """
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -223,12 +224,77 @@ def _detalhar_outliers(
     for indice in outliers_idx:
         linha = dados.loc[indice]
         data = linha.get("GAME_DATE")
+        confronto = str(linha.get("MATCHUP", "")) or None
+        minutos = linha.get("MIN")
+        prorrogacoes = (
+            int((float(minutos) - 240) // 25) if pd.notna(minutos) and float(minutos) > 240 else 0
+        )
         detalhes.append({
             "valor": float(serie.loc[indice]),
             "data": data.strftime("%d/%m/%Y") if pd.notna(data) else None,
-            "confronto": str(linha.get("MATCHUP", "")) or None,
+            "confronto": confronto,
+            "adversario": confronto.replace(" vs. ", " @ ").split(" @ ")[-1].strip() if confronto else None,
+            "minutos": int(minutos) if pd.notna(minutos) else None,
+            "prorrogacoes": prorrogacoes,
         })
     return detalhes
+
+
+def erro_padrao_g1(n: int) -> float:
+    """Erro-padrão do G1 sob normalidade: √(6n(n−1) / ((n−2)(n+1)(n+3)))."""
+    return float(np.sqrt(6 * n * (n - 1) / ((n - 2) * (n + 1) * (n + 3)))) if n > 3 else float("nan")
+
+
+@lru_cache(maxsize=8)
+def referencia_amplitude_iqr(n: int) -> dict[str, float]:
+    """Distribuição de amplitude/IQR em amostras normais de tamanho n (simulação, semente fixa)."""
+    amostras = np.random.default_rng(1000 + n).standard_normal((4000, n))
+    q1, q3 = np.quantile(amostras, [0.25, 0.75], axis=1)
+    razao = (amostras.max(axis=1) - amostras.min(axis=1)) / (q3 - q1)
+    return {"mediana": float(np.median(razao)), "p95": float(np.quantile(razao, 0.95))}
+
+
+REAMOSTRAGENS_BOOTSTRAP = 2000
+
+
+def _cv_amostral(matriz: np.ndarray) -> np.ndarray:
+    return matriz.std(axis=1, ddof=1) / matriz.mean(axis=1) * 100
+
+
+def _iqr_linhas(matriz: np.ndarray) -> np.ndarray:
+    q1, q3 = np.quantile(matriz, [0.25, 0.75], axis=1)
+    return q3 - q1
+
+
+@lru_cache(maxsize=32)
+def _comparar_times_cache(chave: tuple) -> dict[str, Any]:
+    variavel, valores_a, valores_b = chave
+    a, b = np.array(valores_a), np.array(valores_b)
+    gerador = np.random.default_rng(2024)
+    reamostra_a = a[gerador.integers(0, len(a), (REAMOSTRAGENS_BOOTSTRAP, len(a)))]
+    reamostra_b = b[gerador.integers(0, len(b), (REAMOSTRAGENS_BOOTSTRAP, len(b)))]
+    resultado = {}
+    for nome, funcao in (("cv", _cv_amostral), ("iqr", _iqr_linhas)):
+        observada = float(funcao(a[None, :])[0] - funcao(b[None, :])[0])
+        diferencas = funcao(reamostra_a) - funcao(reamostra_b)
+        baixo, alto = (float(v) for v in np.quantile(diferencas, [0.025, 0.975]))
+        resultado[nome] = {
+            "diferenca": observada,
+            "ic95": [baixo, alto],
+            # Relevante só se o intervalo de 95% não contém zero.
+            "relevante": bool(baixo > 0 or alto < 0),
+        }
+    return resultado
+
+
+def comparar_times(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
+    """Diferença de CV e de IQR entre os times (A − B) com IC 95% por bootstrap.
+
+    Com ≈ 75 jogos por time, diferenças pequenas de CV ou IQR aparecem só por
+    acaso; o intervalo diz se a diferença observada se distingue de zero.
+    """
+    a, b = (tuple(_valores(dados, time, variavel).tolist()) for time in TIMES_ANALISADOS)
+    return {"times": TIMES_ANALISADOS, **_comparar_times_cache((variavel, a, b))}
 
 
 def _estatisticas_com_jogos(

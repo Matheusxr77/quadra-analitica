@@ -204,7 +204,9 @@ def test_apis_de_assimetria_cv_e_iqr():
         assert len(corpo["linhas"]) == 14
         assert len(corpo["secoes"]) >= 6
         for secao in corpo["secoes"]:
-            assert secao["titulo"] and secao["paragrafos"]
+            # Toda seção tem interpretação ou metodologia (fórmulas e definições ficam só na metodologia).
+            assert secao["titulo"] and (secao["paragrafos"] or secao["metodologia"])
+            assert set(secao) >= {"titulo", "paragrafos", "metodologia"}
         texto = " ".join(p for s in corpo["secoes"] for p in s["paragrafos"])
         assert any(caractere.isdigit() for caractere in texto)
 
@@ -513,10 +515,12 @@ def test_outliers_por_variavel_lista_jogos_e_concordancia():
     # O jogo de 15 tocos dos Mavericks é marcado por quase todos os métodos.
     blk = next(d for d in pv["detalhes"] if d["variavel"] == "BLK" and d["time"] == "Dallas Mavericks")
     assert blk["concordancia"][0]["valor"] == 15 and blk["concordancia"][0]["total"] >= 5
-    textos = {t["nome"]: t for t in corpo["testes_ausencia"]}
-    for teste in textos.values():
-        assert 1 <= len(teste["paragrafos"]) <= 2
-        assert "0 valores ausentes" in teste["paragrafos"][-1]
+    # O motivo comum ("0 ausentes") aparece uma vez; cada teste traz só o motivo específico.
+    assert "0 valores ausentes" in corpo["motivo_testes"]
+    for teste in corpo["testes_ausencia"]:
+        assert len(teste["paragrafos"]) == 2
+        assert teste["paragrafos"][-1].startswith("Por que não aqui")
+    assert len({t["paragrafos"][-1] for t in corpo["testes_ausencia"]}) == 4
 
 
 # --- Base e síntese -----------------------------------------------------------
@@ -580,3 +584,127 @@ def test_zscore_no_comparativo_e_pagina_de_sintese():
     assert any(c.isdigit() for c in texto)
     pagina = cliente.get("/sintese")
     assert pagina.status_code == 200 and "Síntese" in pagina.data.decode("utf-8")
+
+
+# --- Textos de interpretação: números, separação metodologia × interpretação ---
+
+VARIAVEIS_TEXTO = ["Pontos", "Rebotes", "Assistências", "STL", "BLK", "PF", "FG3M"]
+
+
+def _paragrafos_de_interpretacao():
+    """(página, título, parágrafo, números válidos) de todas as páginas e das 21 combinações do Comparativo."""
+    import urllib.parse
+
+    from verificador_textos import derivados, paragrafos_de, valores
+
+    cliente = criar_cliente()
+    api = {r: cliente.get(f"/api/{r}").get_json() for r in (
+        "assimetria", "cv", "iqr", "qualidade", "sintese", "perfil-z", "descritivas", "dicionario")}
+    base = derivados(api["descritivas"])
+    casos = []
+    for pagina, fontes in (
+        ("assimetria", ["assimetria", "descritivas"]),
+        ("cv", ["cv", "descritivas"]),
+        ("iqr", ["iqr", "descritivas"]),
+        ("qualidade", ["qualidade", "descritivas"]),
+        ("sintese", ["sintese", "descritivas", "perfil-z", "qualidade", "dicionario"]),
+    ):
+        pool = valores(*[api[f] for f in fontes]) | base
+        casos += [(pagina, titulo, p, pool) for titulo, p in paragrafos_de(api[pagina]["secoes"])]
+    pool_z = valores(api["perfil-z"], api["descritivas"]) | base
+    casos += [("perfil-z", "z-score", p, pool_z) for p in api["perfil-z"]["paragrafos"]]
+    for time in ("Todos", "Dallas Mavericks", "Indiana Pacers"):
+        for variavel in VARIAVEIS_TEXTO:
+            consulta = urllib.parse.urlencode({"time": time, "variavel": variavel})
+            corpo = cliente.get(f"/api/estatisticas?{consulta}").get_json()
+            pool = valores(corpo, api["descritivas"]) | base
+            casos += [(f"comparativo {time}/{variavel}", titulo, p, pool)
+                      for titulo, p in paragrafos_de(corpo["interpretacao"])]
+    return casos
+
+
+def test_todo_paragrafo_de_interpretacao_cita_numero_calculado():
+    from verificador_textos import conferir
+
+    casos = _paragrafos_de_interpretacao()
+    assert len(casos) > 150
+    sem_numero = [(pagina, titulo, p[:90]) for pagina, titulo, p, pool in casos if not conferir(p, pool)[0]]
+    assert sem_numero == []
+
+
+def test_numeros_citados_coincidem_com_a_api():
+    from verificador_textos import conferir
+
+    divergentes = [
+        (pagina, titulo, conferir(p, pool)[1], p[:90])
+        for pagina, titulo, p, pool in _paragrafos_de_interpretacao()
+        if conferir(p, pool)[1]
+    ]
+    assert divergentes == []
+
+
+def test_verificador_detecta_numero_inventado():
+    from verificador_textos import conferir, valores
+
+    pool = valores({"media": 113.851, "cv": 10.47})
+    assert conferir("A média é 113,85 pontos e o CV, 10,47%.", pool) == (["113,85", "10,47"], [])
+    assert conferir("A média é 120,00 pontos.", pool)[1] == ["120,00"]
+    assert conferir("Limiar de 1,5×IQR e α = 0,05.", pool) == ([], [])  # só constantes declaradas
+
+
+def test_comparativo_usa_o_time_selecionado():
+    cliente = criar_cliente()
+
+    def texto(time, variavel):
+        corpo = cliente.get(f"/api/estatisticas?time={time}&variavel={variavel}").get_json()
+        return " ".join(p for s in corpo["interpretacao"] for p in s["paragrafos"])
+
+    pacers, mavericks = texto("Indiana Pacers", "BLK"), texto("Dallas Mavericks", "BLK")
+    assert pacers != mavericks
+    assert "G1 = 0,43" in pacers and "G1 = 0,75" not in pacers   # assimetria do time selecionado
+    assert "G1 = 0,75" in mavericks and "prorrogação" in mavericks  # outlier de 15 tocos com prorrogação
+    for variavel in VARIAVEIS_TEXTO:
+        assert texto("Indiana Pacers", variavel) != texto("Dallas Mavericks", variavel)
+    # As frases fixas antigas sumiram.
+    todos = texto("Todos", "Pontos")
+    for antiga in ("A mediana ajuda a evitar", "O CV é adimensional e permite", "a leitura central permanece robusta"):
+        assert antiga not in todos
+
+
+def test_textos_sem_os_problemas_da_revisao():
+    cliente = criar_cliente()
+    paginas = {r: cliente.get(f"/api/{r}").get_json() for r in ("assimetria", "cv", "iqr", "qualidade", "sintese")}
+    tudo = " ".join(
+        p for corpo in paginas.values() for s in corpo["secoes"] for p in s["paragrafos"] + s["metodologia"]
+    )
+    import re
+
+    for proibido in ("≈ 5% dos jogos", "caso(s)", "sem 1 o", "sem 2 os", "imputa-se os", "há um padrão predominante",
+                     "Interpretar com cautela", "usual para amostras deste tamanho", "por o jogo", "ao(s)"):
+        assert proibido not in tudo, proibido
+    # Concordância: nomes de times no plural ("os Pacers são", não "Pacers é").
+    for errado in (r"\b(Pacers|Mavericks) é\b", r"\bMavericks marcou\b", r"\b(Pacers|Mavericks) leva\b",
+                   r"\b(Pacers|Mavericks) tem\b"):
+        assert not re.search(errado, tudo), errado
+    # Convenção de PF declarada como tal, na metodologia da síntese.
+    metodo_sintese = " ".join(m for s in paginas["sintese"]["secoes"] for m in s["metodologia"])
+    assert "Convenção adotada para PF" in metodo_sintese
+    # Só FG3M tem diferença de CV que se distingue do acaso, e o texto diz isso.
+    assert [v for v, c in paginas["cv"]["comparacoes"].items() if c["cv"]["relevante"]] == ["FG3M"]
+    assert "Nas outras 6 variáveis" in tudo
+    # Outliers sólidos com prorrogação sinalizados na Qualidade.
+    assert paginas["qualidade"]["resumo"]["outliers_solidos_com_prorrogacao"] == 3
+
+
+def test_comparacao_bootstrap_e_referencias():
+    from analise import comparar_times, erro_padrao_g1, referencia_amplitude_iqr
+    from infraestrutura.repositorio_dados import RepositorioDados
+
+    raiz = Path(__file__).parents[1] / "dados"
+    dados = RepositorioDados(raiz / "stats_times_regular_final.csv").obter_dados()
+    c = comparar_times(dados, "FG3M")
+    assert c["cv"]["ic95"][0] <= c["cv"]["diferenca"] <= c["cv"]["ic95"][1]
+    assert c == comparar_times(dados, "FG3M")  # semente fixa: reprodutível
+    assert abs(erro_padrao_g1(75) - 0.2774) < 1e-3
+    ref = referencia_amplitude_iqr(75)
+    assert 3.4 < ref["mediana"] < 3.8 and ref["mediana"] < ref["p95"] < 5.5

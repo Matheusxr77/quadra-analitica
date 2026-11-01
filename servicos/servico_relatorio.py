@@ -9,10 +9,12 @@ from analise import (
     TIMES_ANALISADOS,
     calcular_dicionario,
     calcular_estatisticas,
+    calcular_perfil_z,
     calcular_tabela_descritiva,
+    comparar_times,
 )
 from excecoes import ErroAplicacao
-from interpretacao import calcular_assimetria, calcular_cv, calcular_iqr
+from interpretacao import calcular_assimetria, calcular_cv, calcular_iqr, interpretar_variavel
 from qualidade import calcular_qualidade
 from sintese import calcular_resposta_zscore, calcular_sintese
 from infraestrutura.repositorio_dados import RepositorioDados
@@ -30,7 +32,14 @@ class ServicoRelatorio:
             raise ErroAplicacao("O time informado não pertence ao escopo do relatório.")
         if variavel not in VARIAVEIS_ANALISADAS:
             raise ErroAplicacao("A variável informada não está disponível no relatório.")
-        return calcular_estatisticas(self._obter_dados(), time, variavel)
+        dados = self._obter_dados()
+        resultado = calcular_estatisticas(dados, time, variavel)
+        perfil = calcular_perfil_z(dados)
+        comparacao = comparar_times(dados, variavel)
+        resultado["perfil_z"] = next(v for v in perfil["variaveis"] if v["variavel"] == variavel)
+        resultado["comparacao"] = comparacao
+        resultado["interpretacao"] = interpretar_variavel(dados, time, variavel, perfil, comparacao)
+        return resultado
 
     def tabela_descritiva(self) -> dict[str, Any]:
         return calcular_tabela_descritiva(self._obter_dados())

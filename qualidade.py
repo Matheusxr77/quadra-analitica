@@ -31,7 +31,7 @@ from deteccao import (
     obter_calibracao,
     valor_critico_grubbs,
 )
-from interpretacao import _curto, _n, _plural
+from interpretacao import _curto, _n, _plural, _time
 
 ALFA_TESTES = 0.05
 SEMENTE_DEMONSTRACAO = 42
@@ -301,7 +301,9 @@ def _adversario(confronto: str) -> tuple[str | None, str | None]:
 
 def _jogo_detalhado(linha: pd.Series, coluna: str) -> dict[str, Any]:
     adversario, mando = _adversario(linha.get("MATCHUP"))
-    return {**_jogo(linha), "adversario": adversario, "mando": mando, "valor": float(linha[coluna])}
+    prorrogacoes = classificar_minutos(linha.get("MIN")) if "MIN" in linha else None
+    return {**_jogo(linha), "adversario": adversario, "mando": mando, "valor": float(linha[coluna]),
+            "prorrogacoes": prorrogacoes or 0}
 
 
 def _univariados(serie: pd.Series) -> dict[str, Any]:
@@ -662,11 +664,10 @@ MECANISMOS = [
     },
 ]
 
-MOTIVO_NAO_APLICADO = (
-    "Não foi aplicado à base real porque o recorte dos dois times tem 0 valores ausentes em todas as colunas: "
-    "o indicador de ausência R é constante (sempre 0), não existem padrões de ausência diferentes para comparar "
-    "e qualquer estatística do teste ficaria indefinida. A demonstração abaixo usa cópias com ausência simulada "
-    "apenas para mostrar como o teste seria lido."
+MOTIVO_COMUM = (
+    "Nenhum dos quatro testes foi aplicado à base real: o recorte dos dois times tem 0 valores ausentes em todas "
+    "as colunas, então o indicador de ausência R é constante (sempre 0) e não existem padrões de ausência "
+    "diferentes para comparar. Little e Fairclough aparecem num exemplo didático com ausência simulada, abaixo."
 )
 
 TESTES_AUSENCIA = [
@@ -684,7 +685,8 @@ TESTES_AUSENCIA = [
             "colunas observadas com a média geral estimada por EM. A hipótese nula é que os dados são MCAR: se a "
             "ausência fosse puro acaso, os grupos de padrão teriam as mesmas médias. Aqui ele seria aplicado às 7 "
             "variáveis (PTS, REB, AST, STL, BLK, PF, FG3M), e d² seria comparado a uma χ².",
-            MOTIVO_NAO_APLICADO,
+            "Por que não aqui: sem ausentes existe um único padrão (todas as colunas observadas), e d² não tem "
+            "nenhum grupo para comparar com a média geral.",
         ],
         "implementado": True,
     },
@@ -700,13 +702,12 @@ TESTES_AUSENCIA = [
         "paragrafos": [
             "O teste de Jamshidian-Jalal testa MCAR olhando a homogeneidade das covariâncias entre os grupos de "
             "padrão de ausência, e não só das médias como o Little. A hipótese nula é que os dados são MCAR e que as "
-            "covariâncias são iguais entre os grupos. Na prática, imputa-se os ausentes, aplica-se o teste de Hawkins "
+            "covariâncias são iguais entre os grupos. Na prática, imputam-se os ausentes, aplica-se o teste de Hawkins "
             "e, se ele rejeitar, um teste não paramétrico separa 'não é normal' de 'não é MCAR'. Aqui seria aplicado "
             "às 7 variáveis, com cada padrão de ausência como grupo.",
-            MOTIVO_NAO_APLICADO.replace(
-                " A demonstração abaixo usa cópias com ausência simulada apenas para mostrar como o teste seria lido.",
-                " Ele também exige vários padrões com casos suficientes, o que não existe sem ausentes; por isso é "
-                "apresentado só em teoria, sem implementação."),
+            "Por que não aqui: o teste compara covariâncias entre pelo menos dois grupos de padrão com casos "
+            "suficientes em cada um; sem ausentes há um grupo só. Por isso é apresentado em teoria, sem "
+            "implementação.",
         ],
         "implementado": False,
     },
@@ -725,10 +726,9 @@ TESTES_AUSENCIA = [
             "A hipótese nula é que o abandono é completamente aleatório. No basquete, ele se aplicaria a séries de "
             "jogos sucessivos, por exemplo um jogador cujos registros param após uma lesão: compara-se, jogo a jogo, "
             "o desempenho anterior de quem saiu com o de quem seguiu, por testes de postos.",
-            MOTIVO_NAO_APLICADO.replace(
-                " A demonstração abaixo usa cópias com ausência simulada apenas para mostrar como o teste seria lido.",
-                " Além disso, a base é de times (que jogam todos os jogos), sem séries interrompidas; por isso o teste "
-                "é apresentado só em teoria, sem implementação."),
+            "Por que não aqui: além de não haver ausentes, a base é de times, que disputam todos os jogos da "
+            "temporada — não existe série interrompida (dropout) para analisar. Por isso é apresentado em teoria, "
+            "sem implementação.",
         ],
         "implementado": False,
     },
@@ -747,7 +747,8 @@ TESTES_AUSENCIA = [
             "chance de ausência, o que é compatível com MCAR; coeficientes significativos indicam MAR e dizem quais "
             "variáveis precisam entrar na imputação. Aqui, R seria o indicador de ausência de uma variável (ex.: PTS) "
             "e os preditores, as outras seis.",
-            MOTIVO_NAO_APLICADO + " Com R sempre 0, a logística nem pode ser ajustada (não há casos com R = 1).",
+            "Por que não aqui: com R sempre 0 não há nenhum caso com R = 1, e a regressão logística nem pode ser "
+            "ajustada.",
         ],
         "implementado": True,
     },
@@ -829,32 +830,49 @@ NOMES_METODOS = {
 }
 
 
-def _textos_por_variavel(por_variavel: dict[str, Any]) -> list[dict[str, Any]]:
+def _secao(titulo: str, paragrafos: list[str], metodologia: list[str] | None = None) -> dict[str, Any]:
+    """`paragrafos` = interpretação (sempre com números calculados); `metodologia` = método e definições."""
+    return {"titulo": titulo, "metodologia": metodologia or [], "paragrafos": paragrafos}
+
+
+def _curto_metodo(chave: str) -> str:
+    return NOMES_METODOS[chave].split(" (")[0]
+
+
+def _textos_por_variavel(por_variavel: dict[str, Any], resumo: dict[str, Any]) -> list[dict[str, Any]]:
     metodos = por_variavel["metodos"]
     detalhes = por_variavel["detalhes"]
     matriz = por_variavel["matriz_concordancia"]
-    totais = ", ".join(f"{NOMES_METODOS[m].split(' (')[0]} {matriz[m][m]}" for m in metodos)
-    fortes = [
-        (d, j) for d in detalhes for j in d["concordancia"] if j["total"] >= 4
-    ]
-    isolados = [
-        (d, j) for d in detalhes for j in d["concordancia"] if j["total"] == 1
-    ]
+    totais = ", ".join(f"{_curto_metodo(m)} {matriz[m][m]}" for m in metodos)
+    fortes = [(d, j) for d in detalhes for j in d["concordancia"] if j["total"] >= 4]
+    isolados = [(d, j) for d in detalhes for j in d["concordancia"] if j["total"] == 1]
     sem_marcas = [f"{d['variavel']} ({_curto(d['time'])})" for d in detalhes if not d["concordancia"]]
+    fortes_ot = [(d, j) for d, j in fortes if j.get("prorrogacoes")]
+    resumo.update({
+        "outliers_solidos": len(fortes),
+        "outliers_solidos_com_prorrogacao": len(fortes_ot),
+        "marcacoes_isoladas": len(isolados),
+        "combinacoes_sem_marcas": len(sem_marcas),
+        "combinacoes_variavel_time": len(detalhes),
+    })
 
     def jogo(d, j):
-        return (f"{d['variavel']} {_n(j['valor'], 0)} ({_curto(d['time'])}, {j['data']} contra "
-                f"{j['adversario']}, {j['total']} de {len(metodos)} métodos)")
+        extra = f", com {j['prorrogacoes']} prorrogaç{'ão' if j['prorrogacoes'] == 1 else 'ões'}" if j.get("prorrogacoes") else ""
+        return (f"{d['variavel']} {_n(j['valor'], 0)} ({_curto(d['time'])} contra {j['adversario']}, "
+                f"{j['data']}{extra}; {j['total']} de {len(metodos)} métodos)")
 
     paragrafos = [
-        f"Nas 7 variáveis × 2 times, o número de jogos marcados por método é: {totais}. "
-        f"Ao todo, {por_variavel['jogos_marcados']} pares (jogo, variável) foram marcados por pelo menos um método "
-        f"e {por_variavel['marcados_por_todos']} por todos os {len(metodos)}.",
+        f"Nas 7 variáveis × 2 times, o número de jogos marcados por método é: {totais}. Ao todo, "
+        f"{por_variavel['jogos_marcados']} pares (jogo, variável) foram marcados por pelo menos um método e "
+        f"{por_variavel['marcados_por_todos']} por todos os {len(metodos)}.",
     ]
     if fortes:
         paragrafos.append(
-            "Os casos em que 4 ou mais métodos concordam — os outliers mais sólidos — são: "
+            f"Os {len(fortes)} casos em que 4 ou mais métodos concordam — os outliers mais sólidos — são "
             + _lista([jogo(d, j) for d, j in fortes]) + "."
+            + (f" {len(fortes_ot)} desses {len(fortes)} jogos tiveram prorrogação: parte do valor extremo é tempo "
+               "de jogo a mais (mais minutos geram mais tocos, faltas e rebotes disponíveis), não um desempenho "
+               "fora do padrão do time." if fortes_ot else "")
         )
     if isolados:
         por_metodo: dict[str, int] = {}
@@ -862,66 +880,59 @@ def _textos_por_variavel(por_variavel: dict[str, Any]) -> list[dict[str, Any]]:
             metodo = next(m for m, v in j["metodos"].items() if v)
             por_metodo[metodo] = por_metodo.get(metodo, 0) + 1
         paragrafos.append(
-            f"{_plural(len(isolados), 'marcação foi feita', 'marcações foram feitas')} por um único método ("
-            + ", ".join(f"{NOMES_METODOS[m].split(' (')[0]}: {q}" for m, q in por_metodo.items())
-            + "). Marcações isoladas são fracas: dependem da regra de um método só e não se sustentam nos demais."
+            f"{_plural(len(isolados), 'marcação foi feita', 'marcações foram feitas')} por um único método: "
+            + _lista([
+                f"{d['variavel']} {_n(j['valor'], 0)} ({_curto(d['time'])} contra {j['adversario']}, só "
+                f"{_curto_metodo(next(m for m, v in j['metodos'].items() if v))})"
+                for d, j in isolados
+            ])
+            + ". Marcações isoladas dependem da regra de um método só e não se sustentam nos demais."
         )
     if sem_marcas:
         paragrafos.append(
-            f"Nenhum método marcou jogo algum em {_lista(sem_marcas)}: distribuições sem valores atípicos."
+            f"Em {len(sem_marcas)} das {len(detalhes)} combinações nenhum método marcou jogo algum — "
+            f"{_lista(sem_marcas)}: distribuições sem valores atípicos."
         )
-    secoes = [{"titulo": "Outliers por variável: quantos e quais jogos", "paragrafos": paragrafos}]
+    secoes = [_secao("Outliers por variável: quantos e quais jogos", paragrafos)]
 
     pares = sorted(
         ((a, b, matriz[a][b]) for i, a in enumerate(metodos) for b in metodos[i + 1:]),
         key=lambda item: -item[2],
     )
-
-    def concordancia(a, b, q):
-        uniao = matriz[a][a] + matriz[b][b] - q
-        return f"{NOMES_METODOS[a].split(' (')[0]} e {NOMES_METODOS[b].split(' (')[0]} ({q} em comum de {uniao})"
-
-    secoes.append({"titulo": "Concordância entre os métodos", "paragrafos": [
-        "Os pares que mais coincidem são " + _lista([concordancia(*p) for p in pares[:3] if p[2] > 0])
+    secoes.append(_secao("Concordância entre os métodos", [
+        "Os pares que mais coincidem são "
+        + _lista([f"{_curto_metodo(a)} e {_curto_metodo(b)} ({q} jogos em comum; {matriz[a][a]} marcados pelo "
+                  f"primeiro e {matriz[b][b]} pelo segundo)" for a, b, q in pares[:3] if q > 0])
         + ". Como K-NN, DBSCAN e LOF foram calibrados para marcar, em dados normais, a mesma proporção da regra "
-        "de Tukey, a coincidência com o IQR indica que eles enxergam os mesmos jogos isolados, e não que copiam a regra.",
-        "O Z-score (|z| > 3) e o Grubbs são mais conservadores: exigem que o valor seja improvável sob uma normal, "
-        "com corte perto de 3 desvios padrão, enquanto o IQR marca a partir de 2,7. O ECOD univariado depende só do "
-        "posto do valor; por isso tende a marcar o jogo mais extremo de cada coluna mesmo quando ele está próximo "
-        "dos demais, e é o que menos concorda com os métodos de distância.",
-    ]})
+        "de Tukey, a coincidência com o IQR indica que eles enxergam os mesmos jogos isolados.",
+        f"O Z-score marcou {matriz['zscore']['zscore']} e o Grubbs {matriz['grubbs']['grubbs']}, contra "
+        f"{matriz['iqr']['iqr']} do IQR: os dois exigem que o valor seja improvável sob uma normal. O ECOD marcou "
+        f"{matriz['ecod']['ecod']} e coincidiu com o IQR em só {matriz['ecod']['iqr']}: no modo univariado ele "
+        "depende do posto, não da distância, e acaba marcando o jogo mais extremo da coluna mesmo quando está "
+        "perto dos demais.",
+    ], [
+        "Z-score (|z| > 3) e Grubbs cortam perto de 3 desvios padrão; o IQR, a partir de 2,7 numa normal. O ECOD "
+        "univariado depende só do posto do valor.",
+    ]))
     return secoes
 
 
 def _textos_outliers(
-    por_coluna: list[dict[str, Any]], por_variavel: dict[str, Any], multivariados: dict[str, Any]
+    por_coluna: list[dict[str, Any]], por_variavel: dict[str, Any], multivariados: dict[str, Any],
+    resumo: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    secoes = _textos_por_variavel(por_variavel)
+    secoes = _textos_por_variavel(por_variavel, resumo)
     totais = {
         time: {m: sum(l["times"][time][m]["quantidade"] for l in por_coluna) for m in METODOS_UNIVARIADOS}
         for time in TIMES_ANALISADOS
     }
     celulas = len(por_coluna) * len(TIMES_ANALISADOS)
-    paragrafos = [
-        f"No resumo das {len(por_coluna)} colunas de box-score × {len(TIMES_ANALISADOS)} times, os totais de valores "
-        "marcados são: "
-        + "; ".join(
-            f"{_curto(t)} — " + ", ".join(f"{NOMES_METODOS[m].split(' (')[0]} {totais[t][m]}" for m in METODOS_UNIVARIADOS)
-            for t in TIMES_ANALISADOS
-        ) + "."
-    ]
     ordem = sorted(
         ((l["coluna"], t, sum(l["times"][t][m]["quantidade"] for m in ("zscore", "iqr", "grubbs")))
          for l in por_coluna for t in TIMES_ANALISADOS),
         key=lambda item: -item[2],
     )
-    destaques = [f"{c} ({_curto(t)}, {q})" for c, t, q in ordem[:4] if q > 0]
-    if destaques:
-        paragrafos.append(
-            "Somando Z-score, IQR e Grubbs, as colunas com mais marcações são " + _lista(destaques) + "."
-        )
-    secoes.append({"titulo": "Resumo nas 18 colunas de box-score", "paragrafos": paragrafos})
-
+    destaques = [(c, t, q) for c, t, q in ordem[:4] if q > 0]
     nao_normais = [
         (l["coluna"], t) for l in por_coluna for t in TIMES_ANALISADOS
         if (l["times"][t]["grubbs"]["shapiro_p"] or 1) < ALFA_TESTES
@@ -938,78 +949,95 @@ def _textos_outliers(
         1 for l in por_coluna for t in TIMES_ANALISADOS
         if l["times"][t]["zscore"]["quantidade"] > l["times"][t]["grubbs"]["quantidade"]
     )
+    resumo.update({
+        "totais_18_colunas": totais,
+        "destaques_18_colunas": [{"coluna": c, "time": t, "soma": q} for c, t, q in destaques],
+        "combinacoes_coluna_time": celulas,
+        "iqr_mais_que_grubbs": iqr_sem_grubbs,
+        "grubbs_alem_z": grubbs_alem_z,
+        "z_alem_grubbs": z_alem_grubbs,
+        "nao_normais": len(nao_normais),
+    })
+    paragrafos = [
+        f"No resumo das {len(por_coluna)} colunas de box-score, os totais de valores marcados são: "
+        + "; ".join(
+            f"{_curto(t)} — " + ", ".join(f"{_curto_metodo(m)} {totais[t][m]}" for m in METODOS_UNIVARIADOS)
+            for t in TIMES_ANALISADOS
+        ) + ".",
+    ]
+    if destaques:
+        paragrafos.append(
+            "Somando Z-score, IQR e Grubbs, as colunas com mais marcações são "
+            + _lista([f"{_nome(c)} ({_curto(t)}, {q})" for c, t, q in destaques]) + "."
+        )
+    secoes.append(_secao("Resumo nas 18 colunas de box-score", paragrafos))
+
     tamanhos = sorted({l["times"][t]["n"] for l in por_coluna for t in TIMES_ANALISADOS})
     por_valor: dict[str, list[int]] = {}
     for n in tamanhos:
         por_valor.setdefault(_n(valor_critico_grubbs(n)), []).append(n)
-    criticos = " e ".join(
-        f"{valor} para n = {' e '.join(str(n) for n in ns)}" for valor, ns in por_valor.items()
-    )
+    criticos = " e ".join(f"{valor} para n = {' e '.join(str(n) for n in ns)}" for valor, ns in por_valor.items())
     if grubbs_alem_z:
         texto_z = (
             f"O Grubbs marcou mais que o Z-score em {grubbs_alem_z} combinações: ao remover o primeiro extremo, "
-            "a média e o DP encolhem e o seguinte pode passar a ser significativo, enquanto o Z-score usa uma "
-            "única vez o DP inflado pelos próprios extremos."
+            "a média e o DP encolhem e o seguinte pode passar a ser significativo."
         )
     else:
         texto_z = (
-            "O Grubbs não marcou nada além do Z-score: o seu corte (G crítico = "
-            f"{criticos}) é mais exigente que |z| > {_n(LIMIAR_ZSCORE, 0)}, de modo que, aqui, o ganho da "
-            "iteração (desmascarar um segundo extremo) não chegou a aparecer"
-            + (f"; em {z_alem_grubbs} combinações o Z-score marcou um valor entre 3 e o G crítico."
-               if z_alem_grubbs else ".")
+            f"O Grubbs não marcou nada além do Z-score: seu corte (G crítico = {criticos}) é mais exigente que "
+            f"|z| > {_n(LIMIAR_ZSCORE, 0)}, e aqui o ganho da iteração não chegou a aparecer"
+            + (f"; em {z_alem_grubbs} combinações o Z-score marcou um valor entre 3 e o G crítico." if z_alem_grubbs else ".")
         )
-    lista_normais = ", ".join(f"{c} ({_curto(t)})" for c, t in nao_normais)
-    secoes.append({"titulo": "Por que os métodos discordam", "paragrafos": [
-        f"O IQR marcou mais valores que o Grubbs em {iqr_sem_grubbs} de {celulas} combinações coluna × time. "
-        "A regra de Tukey olha só para quartis e marca qualquer ponto além de 1,5×IQR; o Grubbs exige que o extremo "
-        f"seja improvável sob uma normal com α = {_n(ALFA_GRUBBS)}, e o corte cresce com n ({criticos}).",
+    secoes.append(_secao("Por que os métodos discordam", [
+        f"O IQR marcou mais valores que o Grubbs em {iqr_sem_grubbs} de {celulas} combinações coluna × time: a "
+        "regra de Tukey olha só para quartis, e o Grubbs exige que o extremo seja improvável sob uma normal "
+        f"com α = {_n(ALFA_GRUBBS)} (corte de {criticos}).",
         texto_z,
         f"O Shapiro-Wilk rejeitou a normalidade (p < 0,05) em {len(nao_normais)} de {celulas} combinações"
-        + (f" — {lista_normais}" if nao_normais else "")
-        + ". Nelas o Z-score e o Grubbs perdem a base teórica e o IQR é a referência; nas contagens pequenas "
-        "(STL, BLK) os valores discretos e repetidos também pesam na rejeição.",
-    ]})
+        + (f" — {', '.join(f'{_nome(c)} ({_curto(t)})' for c, t in nao_normais)}" if nao_normais else "")
+        + ". Nelas o Z-score e o Grubbs perdem a base teórica e o IQR é a referência.",
+    ]))
 
     paragrafos_mv = []
     for time in TIMES_ANALISADOS:
         info = multivariados["times"][time]
         contagens = ", ".join(
-            f"{NOMES_METODOS[m].split(' (')[0]} {info['metodos'][m]['quantidade']}" for m in ("ecod", "knn", "dbscan", "lof")
+            f"{_curto_metodo(m)} {info['metodos'][m]['quantidade']}" for m in ("ecod", "knn", "dbscan", "lof")
         )
         paragrafos_mv.append(
-            f"{_curto(time)} ({info['n']} jogos, 7 variáveis em σ robusto): {contagens}; "
+            f"{_curto(time)} ({info['n']} jogos): {contagens}; "
             f"{_plural(info['em_todos'], 'jogo marcado', 'jogos marcados')} pelos quatro métodos ao mesmo tempo."
         )
-    paragrafos_mv.append(
-        "Os métodos multivariados avaliam o jogo inteiro (as 7 variáveis juntas): um jogo pode ser atípico pela "
-        "combinação de valores sem ter nenhuma coluna fora dos limites univariados. Os quatro cortes foram "
-        "calibrados em normais de 7 dimensões para a mesma taxa de referência dos univariados."
-    )
-    secoes.append({"titulo": "Outliers multivariados", "paragrafos": paragrafos_mv})
+    secoes.append(_secao("Outliers multivariados", paragrafos_mv, [
+        "Os métodos multivariados avaliam o jogo inteiro (as 7 variáveis juntas, em σ robusto): um jogo pode ser "
+        "atípico pela combinação de valores sem ter nenhuma coluna fora dos limites univariados. Os cortes foram "
+        "calibrados em normais de 7 dimensões para a mesma taxa de referência dos univariados.",
+    ]))
     return secoes
 
 
-def _textos_base(
-    ausentes, duplicatas, zeros, dominio, demonstracao
-) -> list[dict[str, Any]]:
+def _textos_base(ausentes, duplicatas, zeros, dominio, demonstracao, resumo) -> list[dict[str, Any]]:
     total_fonte = sum(l["fonte"] or 0 for l in ausentes)
     celulas = duplicatas["fonte"]["registros"] * len(ausentes)
-    secoes = [{"titulo": "Ausentes", "paragrafos": [
+    resumo.update({"celulas_fonte": celulas, "colunas_fonte": len(ausentes)})
+    recorte_ausentes = sum(l["recorte"] or 0 for l in ausentes)
+    tratado_ausentes = sum(l["tratado"] or 0 for l in ausentes)
+    secoes = [_secao("Ausentes", [
         f"A fonte tem {_n(total_fonte, 0)} valores ausentes em {_n(celulas, 0)} células "
-        f"({duplicatas['fonte']['registros']} registros × {len(ausentes)} colunas). O recorte bruto do grupo "
-        f"({duplicatas['recorte']['registros']} registros) tem {sum(l['recorte'] or 0 for l in ausentes)} e a "
-        f"base tratada tem {sum(l['tratado'] or 0 for l in ausentes)}: a conversão de tipos não gerou ausentes.",
-        "Sem ausentes, o indicador de ausência R é constante e os testes de mecanismo não têm o que comparar "
-        "(no Little não há segundo padrão; na logística de Fairclough não há variação em R). Por isso eles são "
-        "aplicados abaixo a cópias com ausência simulada, para mostrar como seriam usados e decididos.",
-    ]}]
+        f"({_n(duplicatas['fonte']['registros'], 0)} registros × {len(ausentes)} colunas). "
+        + (f"Nem o recorte bruto ({duplicatas['recorte']['registros']} registros) nem a base tratada têm ausentes "
+           f"({recorte_ausentes} e {tratado_ausentes}): a conversão de tipos não gerou valores faltantes."
+           if recorte_ausentes == tratado_ausentes == 0 else
+           f"O recorte bruto tem {recorte_ausentes} e a base tratada, {tratado_ausentes}."),
+    ], [
+        "Sem ausentes, o indicador de ausência R é constante e os testes de mecanismo não têm o que comparar. "
+        "Por isso eles são aplicados abaixo a cópias com ausência simulada, só para mostrar como seriam lidos.",
+    ])]
 
     paragrafos_demo = []
     for cenario in demonstracao["cenarios"]:
         little, fair = cenario["little"], cenario["fairclough"]
         k = len(fair["coeficientes"])
-        bonferroni = ALFA_TESTES / k
         texto = (
             f"{cenario['nome']} ({cenario['ausentes']} de {cenario['n']} valores de PTS removidos): Little d² = "
             f"{_n(little['estatistica'])}, gl = {little['gl']}, p = {_n(little['p_valor'], 4)} → "
@@ -1028,25 +1056,24 @@ def _textos_base(
             soltos = [c["variavel"] for c in fair["coeficientes"] if c["p_valor"] < ALFA_TESTES]
             texto += "."
             if soltos:
+                resumo["bonferroni"] = ALFA_TESTES / k
                 texto += (
                     f" Os p-valores de Wald abaixo de 0,05 em {_lista(soltos)} não contam como evidência: "
                     f"com o teste global não significativo e {k} coeficientes testados, o corte corrigido de "
-                    f"Bonferroni seria {_n(bonferroni, 4)}."
+                    f"Bonferroni seria {_n(ALFA_TESTES / k, 4)}."
                 )
         paragrafos_demo.append(texto)
-    paragrafos_demo.append(
-        f"Sob MCAR verdadeiro, um teste com α = {_n(ALFA_TESTES)} ainda rejeita em cerca de 5% das amostras; "
-        f"por isso a semente da simulação ({demonstracao['semente']}) é fixa e declarada, e uma única rejeição "
-        "nunca é tratada como prova."
-    )
-    paragrafos_demo.append(
-        "Ambos só detectam dependência das variáveis observadas: se a ausência dependesse do próprio PTS (MNAR), "
-        "o padrão só apareceria via variáveis correlacionadas a ele — e nunca seria confirmado pelos dados."
-    )
-    secoes.append({"titulo": "Demonstração dos testes", "paragrafos": paragrafos_demo})
+    secoes.append(_secao("Exemplo didático dos testes (ausência simulada)", paragrafos_demo, [
+        f"Sob MCAR verdadeiro, um teste com α = {_n(ALFA_TESTES)} ainda rejeita em cerca de 5% das amostras; por "
+        f"isso a semente da simulação ({demonstracao['semente']}) é fixa e declarada, e uma única rejeição nunca é "
+        "tratada como prova.",
+        "Os dois testes só detectam dependência das variáveis observadas: se a ausência dependesse do próprio "
+        "PTS (MNAR), o padrão só apareceria via variáveis correlacionadas a ele — e nunca seria confirmado pelos "
+        "dados.",
+    ]))
 
     fonte, recorte = duplicatas["fonte"], duplicatas["recorte"]
-    secoes.append({"titulo": "Duplicatas", "paragrafos": [
+    secoes.append(_secao("Duplicatas", [
         f"Na fonte bruta ({_n(fonte['registros'], 0)} registros, antes de qualquer limpeza): "
         f"{fonte['linha_inteira']} linhas inteiras repetidas e {fonte['chave_time_jogo']} repetições da chave "
         f"(TEAM_NAME, Game_ID). Os {_n(fonte['jogos_distintos'], 0)} Game_ID aparecem "
@@ -1055,52 +1082,58 @@ def _textos_base(
            else f"fora do par esperado em {fonte['jogos_fora_do_par']} casos.")
         + f" No recorte bruto do grupo: {recorte['linha_inteira']} linhas e {recorte['chave_time_jogo']} chaves "
         f"repetidas; o tratamento removeu {duplicatas['removidos_no_tratamento']} registros.",
-    ]})
+    ]))
 
     com_zero = [z for z in zeros if z["zeros"]]
     negativos = sum(z["negativos"] for z in zeros)
-    secoes.append({"titulo": "Zeros e negativos", "paragrafos": [
+    resumo["negativos"] = negativos
+    secoes.append(_secao("Zeros e negativos", [
         "Zeros encontrados no recorte: "
         + "; ".join(f"{z['coluna']} = {z['zeros']}" for z in com_zero)
-        + ". Nenhum deles é código de ausência: são resultados (derrota), acumulados no início da temporada ou "
-        f"contagens que podem ser zero. Valores negativos: {negativos}.",
-    ]})
+        + ". Nenhum é código de ausência: WL = 0 é derrota, W e W_PCT = 0 são o início da temporada (antes da "
+        "primeira vitória) e BLK = 0 são jogos sem nenhum toco — incomuns, mas possíveis. "
+        f"Valores negativos: {negativos}.",
+    ]))
 
     regras_violadas = [r for r in dominio["regras"] if r["violacoes_fonte"] or r["violacoes_recorte"]]
     prorrogados = dominio["jogos_prorrogacao"]
-    por_k = {}
+    por_k: dict[int, int] = {}
     for jogo in prorrogados:
         por_k[jogo["prorrogacoes"]] = por_k.get(jogo["prorrogacoes"], 0) + 1
     fonte_min = {m["minutos"]: m["registros"] for m in dominio["minutos_fonte"]}
-    secoes.append({"titulo": "Valores fora de domínio e o caso do MIN", "paragrafos": [
+    resumo["regras_dominio"] = len(dominio["regras"])
+    efeito = []
+    for t, e in dominio["efeito_prorrogacao_pts"].items():
+        if not e["jogos_prorrogacao"]:
+            continue
+        texto = (
+            f"{_time(t)} marcaram em média {_n(e['media_prorrogacao'])} pontos nos {e['jogos_prorrogacao']} jogos "
+            f"com prorrogação, contra {_n(e['media_regular'])} no tempo normal"
+        )
+        if e["outliers_pts"]:
+            texto += f" ({e['outliers_pts_em_prorrogacao']} de seus {e['outliers_pts']} outliers de PTS são jogos prorrogados)"
+        efeito.append(texto)
+    secoes.append(_secao("Valores fora de domínio e o caso do MIN", [
         f"Foram verificadas {len(dominio['regras'])} regras de domínio e coerência; "
         + ("nenhuma teve violação na fonte nem no recorte."
            if not regras_violadas
            else "violações em: " + ", ".join(
                f"{r['regra']} ({r['violacoes_fonte']} na fonte, {r['violacoes_recorte']} no recorte)"
                for r in regras_violadas) + "."),
-        "MIN não é o tempo de jogo, e sim a soma dos minutos dos jogadores: 48 min × 5 = 240 no tempo normal. "
-        "Valores 265 e 290 parecem fora do domínio de quem espera 240, mas cada prorrogação tem 5 minutos × 5 "
-        "jogadores = +25: 265 = 1 prorrogação e 290 = 2. São jogos reais, não erros, e foram mantidos.",
-        f"No recorte: {len(prorrogados)} registros com prorrogação"
+        f"No recorte há {len(prorrogados)} registros com MIN acima de 240"
         + (" (" + ", ".join(f"{q} com {k} prorrogaç{'ão' if k == 1 else 'ões'}" for k, q in sorted(por_k.items())) + ")"
            if por_k else "")
-        + f". Na liga inteira: {fonte_min.get(265, 0)} registros com 265 e {fonte_min.get(290, 0)} com 290 "
-        "(cada jogo gera um registro por time).",
-        "Efeito na pontuação: "
-        + "; ".join(
-            f"{_curto(t)} marcou em média {_n(e['media_prorrogacao'])} pontos nos "
-            f"{e['jogos_prorrogacao']} jogos prorrogados contra {_n(e['media_regular'])} no tempo normal"
-            + (
-                ", sem outliers de PTS pela regra de Tukey" if not e["outliers_pts"]
-                else f", e {e['outliers_pts_em_prorrogacao']} de seus {e['outliers_pts']} outliers de PTS (Tukey) "
-                f"{'é jogo prorrogado' if e['outliers_pts_em_prorrogacao'] == 1 else 'são jogos prorrogados'}"
-            )
-            for t, e in dominio["efeito_prorrogacao_pts"].items() if e["jogos_prorrogacao"]
-        )
-        + ". Minutos extras aumentam as contagens, então a prorrogação deve ser lembrada ao ler extremos "
-        "superiores, mas não justifica excluir esses jogos.",
-    ]})
+        + f"; na liga inteira, {fonte_min.get(265, 0)} registros com 265 e {fonte_min.get(290, 0)} com 290. São jogos "
+        "reais e foram mantidos.",
+        *([("Efeito na pontuação: " + "; ".join(efeito)
+            + ". Com tão poucos jogos prorrogados a média é instável, mas a diferença é coerente com os minutos "
+            "extras — por isso a prorrogação é sinalizada nos outliers, sem justificar excluir esses jogos.")]
+          if efeito else []),
+    ], [
+        "MIN não é o tempo de jogo, e sim a soma dos minutos dos jogadores: 48 min × 5 = 240 no tempo normal. "
+        "Cada prorrogação soma 5 minutos × 5 jogadores = 25: 265 = 1 prorrogação e 290 = 2. Por isso o domínio "
+        "de MIN é 240 + 25·k, e não só 240.",
+    ]))
     return secoes
 
 
@@ -1116,6 +1149,9 @@ def calcular_qualidade(
     multivariados = outliers_multivariados(dados)
     demonstracao = demonstrar_testes_ausencia(dados)
     total_ausentes = sum(l["tratado"] or 0 for l in ausentes)
+    resumo: dict[str, Any] = {}
+    secoes = (_textos_base(ausentes, duplicatas, zeros, dominio, demonstracao, resumo)
+              + _textos_outliers(por_coluna, por_variavel, multivariados, resumo))
     status = (
         "Não aplicável à base real: 0 valores ausentes, o indicador de ausência é constante."
         if total_ausentes == 0
@@ -1129,11 +1165,12 @@ def calcular_qualidade(
         "dominio": dominio,
         "mecanismos": MECANISMOS,
         "testes_ausencia": [
+            # O motivo "0 ausentes" só vale se for verdade nos dados.
             {**t, "status_base_real": status,
-             # O motivo "0 ausentes" só vale se for verdade nos dados.
              "paragrafos": t["paragrafos"] if total_ausentes == 0 else [t["paragrafos"][0], status]}
             for t in TESTES_AUSENCIA
         ],
+        "motivo_testes": MOTIVO_COMUM if total_ausentes == 0 else status,
         "demonstracao": demonstracao,
         "metodos": _metodos_outlier(
             obter_calibracao(max(d["n"] for d in por_variavel["detalhes"]), 1),
@@ -1147,6 +1184,6 @@ def calcular_qualidade(
         "outliers_por_coluna": por_coluna,
         "outliers_por_variavel": por_variavel,
         "outliers_multivariados": multivariados,
-        "secoes": _textos_base(ausentes, duplicatas, zeros, dominio, demonstracao)
-        + _textos_outliers(por_coluna, por_variavel, multivariados),
+        "secoes": secoes,
+        "resumo": resumo,
     }
