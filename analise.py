@@ -108,14 +108,35 @@ def _valores(dados: pd.DataFrame, time: str, variavel: str) -> pd.Series:
     return filtrados[MAPA_VARIAVEIS[variavel]].dropna().astype(float)
 
 
+LIMITE_SIMETRIA = 0.5
+LIMITE_ASSIMETRIA_FORTE = 1.0
+FAIXAS_CV = (15.0, 30.0)  # % — abaixo: consistente; entre: moderada; acima: irregular
+MEDIA_MINIMA_CV = 10.0  # abaixo disso (contagens pequenas) o CV é lido com cautela
+CONSTANTE_SIGMA_ROBUSTO = 1.349  # IQR de uma normal = 1,349 σ
+
+
+def _intensidade_assimetria(valor: float) -> str:
+    if abs(valor) < LIMITE_SIMETRIA:
+        return "aproximadamente simétrica"
+    return "moderada" if abs(valor) < LIMITE_ASSIMETRIA_FORTE else "forte"
+
+
+def _direcao_assimetria(valor: float) -> str:
+    """A direção vem só do sinal do coeficiente, como pede o enunciado."""
+    if valor > 0:
+        return "à direita (positiva)"
+    if valor < 0:
+        return "à esquerda (negativa)"
+    return "simétrica"
+
+
 def _classificar_assimetria(valor: float) -> str:
-    intensidade = "aproximadamente simétrica" if abs(valor) < 0.5 else (
-        "moderada" if abs(valor) < 1 else "forte"
-    )
-    direcao = "simétrica" if abs(valor) < 0.05 else (
-        "à direita (positiva)" if valor > 0 else "à esquerda (negativa)"
-    )
-    return f"{intensidade}; distribuição {direcao}"
+    return f"{_intensidade_assimetria(valor)}; distribuição {_direcao_assimetria(valor)}"
+
+
+def _skew(serie: pd.Series) -> float:
+    """Coeficiente ajustado de Fisher-Pearson (G1), igual a pandas.Series.skew."""
+    return float(serie.skew()) if len(serie) > 2 else 0.0
 
 
 def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
@@ -135,7 +156,7 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
         float(valor) for valor in contagens[contagens == contagens.max()].index
     )
     valor_moda = modas[0] if modas else None
-    assimetria = float(serie.skew()) if len(serie) > 2 else 0.0
+    assimetria = _skew(serie)
     limite_inferior = quartil_1 - 1.5 * (quartil_3 - quartil_1)
     limite_superior = quartil_3 + 1.5 * (quartil_3 - quartil_1)
     mascara_atipicos = (serie < limite_inferior) | (serie > limite_superior)
@@ -144,6 +165,13 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
     # dentro dos limites, e não até os limites em si.
     dentro = serie[~mascara_atipicos]
     cv = desvio / media if media > 0 else None
+    iqr = quartil_3 - quartil_1
+    mediana = float(serie.median())
+    q1_sem = float(dentro.quantile(0.25, interpolation="linear"))
+    q3_sem = float(dentro.quantile(0.75, interpolation="linear"))
+    desvio_sem = float(dentro.std(ddof=1))
+    sigma_robusto = iqr / CONSTANTE_SIGMA_ROBUSTO
+    extremos_3iqr = serie[(serie < quartil_1 - 3 * iqr) | (serie > quartil_3 + 3 * iqr)]
     return {
         "n": int(serie.size),
         "media": media,
@@ -167,8 +195,24 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
         "quantidade_outliers": int(valores_atipicos.size),
         "assimetria": assimetria,
         "classificacao_assimetria": _classificar_assimetria(assimetria),
+        "direcao_assimetria": _direcao_assimetria(assimetria),
+        "intensidade_assimetria": _intensidade_assimetria(assimetria),
+        # Bowley (quartis): verificação robusta, não depende das caudas.
+        "bowley": (quartil_3 + quartil_1 - 2 * mediana) / iqr if iqr > 0 else None,
+        "assimetria_sem_outliers": _skew(dentro),
         "cv": cv,
         "cv_percentual": cv * 100 if cv is not None else None,
+        "cv_robusto_iqr": iqr / mediana * 100 if mediana > 0 else None,
+        # Em contagens tipo Poisson, DP ≈ √média ⇒ CV ≈ 100/√média: piso esperado.
+        "cv_poisson_ref": 100 / np.sqrt(media) if media > 0 else None,
+        "desvio_sem_outliers": desvio_sem,
+        "iqr_sem_outliers": q3_sem - q1_sem,
+        "sigma_robusto": sigma_robusto,
+        "razao_dp_sigma_robusto": desvio / sigma_robusto if sigma_robusto > 0 else None,
+        "razao_amplitude_iqr": float(serie.max() - serie.min()) / iqr if iqr > 0 else None,
+        "limite_inferior_3iqr": quartil_1 - 3 * iqr,
+        "limite_superior_3iqr": quartil_3 + 3 * iqr,
+        "quantidade_outliers_3iqr": int(extremos_3iqr.size),
     }
 
 
@@ -218,6 +262,56 @@ def calcular_tabela_descritiva(dados: pd.DataFrame) -> dict[str, Any]:
     return {"times": TIMES_ANALISADOS, "variaveis": variaveis}
 
 
+def _largura_freedman_diaconis(serie: pd.Series) -> int:
+    """h = 2·IQR·n^(-1/3), arredondado para inteiro ≥ 1.
+
+    As sete variáveis são contagens inteiras; uma faixa fracionária deixaria
+    faixas vazias alternadas e distorceria o formato do histograma.
+    """
+    iqr = float(serie.quantile(0.75) - serie.quantile(0.25))
+    if iqr <= 0 or serie.size == 0:
+        return 1
+    return max(1, int(round(2 * iqr * serie.size ** (-1 / 3))))
+
+
+def calcular_histograma_kde(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
+    """Histograma com faixas comuns aos dois times + KDE gaussiana por time.
+
+    As bordas são calculadas com os dois times juntos para que as barras
+    sejam comparáveis. A KDE (scipy.stats.gaussian_kde, banda de Scott) é
+    multiplicada por n·h para ficar na mesma escala do histograma
+    (número de jogos por faixa).
+    """
+    conjunto = pd.concat([_valores(dados, time, variavel) for time in TIMES_ANALISADOS])
+    largura = _largura_freedman_diaconis(conjunto)
+    inicio = np.floor(conjunto.min()) - 0.5
+    fim = np.ceil(conjunto.max()) + 0.5
+    bordas = np.arange(inicio, fim + largura, largura)
+    bordas = bordas[: np.searchsorted(bordas, fim) + 1]
+    grade = np.linspace(inicio - largura, bordas[-1] + largura, 200)
+    por_time = {}
+    for time in TIMES_ANALISADOS:
+        serie = _valores(dados, time, variavel)
+        contagens, _ = np.histogram(serie, bins=bordas)
+        kde = stats.gaussian_kde(serie.to_numpy()) if serie.nunique() > 1 else None
+        densidade = kde(grade) if kde is not None else np.zeros_like(grade)
+        por_time[time] = {
+            "n": int(serie.size),
+            "contagens": [int(valor) for valor in contagens],
+            "kde_x": [float(valor) for valor in grade],
+            "kde_densidade": [float(valor) for valor in densidade],
+            "kde_frequencia": [float(valor) for valor in densidade * serie.size * largura],
+            "banda_kde": float(kde.factor * serie.std(ddof=1)) if kde is not None else None,
+        }
+    return {
+        "regra": "Freedman–Diaconis (h = 2·IQR·n^(−1/3), arredondado para inteiro)",
+        "largura": largura,
+        "bordas": [float(valor) for valor in bordas],
+        "centros": [float((a + b) / 2) for a, b in zip(bordas[:-1], bordas[1:])],
+        "times": por_time,
+    }
+
+
 def _serie_para_grafico(serie: pd.Series) -> list[float]:
     return [float(valor) for valor in serie.tolist()]
 
@@ -243,6 +337,7 @@ def calcular_estatisticas(
         "unidade": UNIDADES[variavel],
         "por_time": por_time,
         "comparativo": comparativo,
+        "histograma": calcular_histograma_kde(dados, variavel),
     }
 
 

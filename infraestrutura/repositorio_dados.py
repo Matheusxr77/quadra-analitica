@@ -33,7 +33,7 @@ class RepositorioDados:
     ) -> None:
         self._caminho_origem = caminho
         self._caminho_selecionados = caminho_selecionados or (
-            caminho.parent / "dados" / "estatisticas_times_selecionados.csv"
+            caminho.parent / "estatisticas_times_selecionados.csv"
         )
         self._dados: pd.DataFrame | None = None
         self._bloqueio = Lock()

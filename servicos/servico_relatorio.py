@@ -13,6 +13,7 @@ from analise import (
     calcular_tabela_descritiva,
 )
 from excecoes import ErroAplicacao
+from interpretacao import calcular_assimetria, calcular_cv, calcular_iqr
 from infraestrutura.repositorio_dados import RepositorioDados
 
 
@@ -31,6 +32,15 @@ class ServicoRelatorio:
 
     def tabela_descritiva(self) -> dict[str, Any]:
         return calcular_tabela_descritiva(self._obter_dados())
+
+    def assimetria(self) -> dict[str, Any]:
+        return calcular_assimetria(self._obter_dados())
+
+    def cv(self) -> dict[str, Any]:
+        return calcular_cv(self._obter_dados())
+
+    def iqr(self) -> dict[str, Any]:
+        return calcular_iqr(self._obter_dados())
 
     def dicionario(self) -> dict[str, Any]:
         return calcular_dicionario(self._obter_dados())

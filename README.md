@@ -104,6 +104,10 @@ tratamento recebeu antes da análise.
 - Outliers principais usam os limites de Tukey `Q1 - 1,5×IQR` e `Q3 + 1,5×IQR`; os demais métodos solicitados são apresentados como diagnóstico complementar.
 - A assimetria usa o coeficiente ajustado de Fisher-Pearson (`pandas.Series.skew`). A classificação adotada é: `|g1| < 0,5` aproximadamente simétrica; `0,5 ≤ |g1| < 1` moderada; `|g1| ≥ 1` forte.
 - O CV é `desvio padrão amostral / média × 100`. Ele é interpretado com cautela em métricas com média próxima de zero, como STL e BLK.
+- Assimetria, CV e IQR têm páginas próprias (`/assimetria`, `/cv`, `/iqr`) com fórmula, quadro-resumo variáveis × times e interpretação gerada a partir dos números (`interpretacao.py`).
+- O coeficiente de Bowley `(Q3 + Q1 − 2·Mediana)/IQR` é exibido como verificação robusta do sinal de G1; G1 também é recalculado sem os outliers para mostrar quando poucos jogos extremos explicam a assimetria.
+- Faixas do CV: `< 15%` consistente, `15–30%` moderada, `> 30%` irregular. Com média `< 10` por jogo o CV é lido com cautela e comparado ao piso de contagens tipo Poisson (`100/√média`); `IQR/Mediana × 100` é a alternativa robusta.
+- O histograma usa faixas de Freedman–Diaconis (`h = 2·IQR·n^(−1/3)`, arredondado para inteiro porque as variáveis são contagens), comuns aos dois times. A curva de densidade é `scipy.stats.gaussian_kde` (banda de Scott), calculada no servidor e escalada por `n·h` para ficar na mesma unidade das barras (nº de jogos).
 
 ## Equipe
 - Matheus Marcos

@@ -151,22 +151,40 @@ function construirHistograma(dados) {
     return;
   }
   destruirGrafico("histograma");
+  // Faixas (Freedman–Diaconis) e KDE (scipy.stats.gaussian_kde) vêm prontas do servidor.
+  const hist = dados.histograma;
   const time = document.getElementById("seletor-time").value;
-  const selecionados = time === "Todos" ? dados.comparativo : dados.por_time;
+  const nomesTimes = Object.keys(hist.times);
+  const exibidos = time === "Todos" ? nomesTimes : [time];
   const datasets = [];
-  Object.entries(selecionados).forEach(([nome, item], indice) => {
-    const frequencias = {};
-    item.valores.forEach((valor) => { const faixa = Math.round(valor / 5) * 5; frequencias[faixa] = (frequencias[faixa] || 0) + 1; });
-    datasets.push({ label: nome, data: Object.entries(frequencias).map(([x, y]) => ({ x: Number(x), y })), backgroundColor: `${cores[indice]}99`, borderColor: cores[indice], borderWidth: 1 });
+  exibidos.forEach((nome) => {
+    const cor = cores[nomesTimes.indexOf(nome)];
+    const item = hist.times[nome];
+    datasets.push({
+      type: "bar", label: `${nome} — jogos por faixa`,
+      data: hist.centros.map((x, i) => ({ x, y: item.contagens[i] })),
+      backgroundColor: `${cor}66`, borderColor: cor, borderWidth: 1,
+      barPercentage: 1, categoryPercentage: 1, order: 2,
+    });
+    datasets.push({
+      type: "line", label: `${nome} — KDE (banda ${formatar(item.banda_kde)})`,
+      data: item.kde_x.map((x, i) => ({ x, y: item.kde_frequencia[i] })),
+      borderColor: cor, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.3, order: 1,
+    });
   });
   const opcoes = opcoesPadrao({
-    titulo: `Histograma de ${dados.variavel} por jogo (faixas centradas em múltiplos de 5)`,
+    titulo: `Histograma de ${dados.variavel} com KDE — faixas de ${hist.largura} (Freedman–Diaconis)`,
     eixoX: `${dados.variavel} (${dados.unidade})`,
     eixoY: "Frequência (nº de jogos)",
     xLinear: true,
     beginAtZero: true,
+    tooltip: { callbacks: { label: (ctx) => ctx.dataset.type === "bar"
+      ? `${ctx.dataset.label}: ${ctx.parsed.y} jogos em [${formatar(ctx.parsed.x - hist.largura / 2, 1)}; ${formatar(ctx.parsed.x + hist.largura / 2, 1)})`
+      : `${ctx.dataset.label}: ${formatar(ctx.parsed.y)} jogos (densidade × n × largura)` } },
   });
   opcoes.parsing = false;
+  opcoes.scales.x.min = hist.bordas[0];
+  opcoes.scales.x.max = hist.bordas[hist.bordas.length - 1];
   graficos.histograma = new Chart(elemento, { type: "bar", data: { datasets }, options: opcoes });
 }
 
@@ -308,3 +326,159 @@ atualizarPainel();
 carregarQualidade();
 carregarDicionario();
 carregarTabelaDescritiva();
+
+// ---------------------------------------------------------------------------
+// Páginas de Assimetria, CV e IQR: quadro-resumo, detalhe, gráfico e textos.
+// ---------------------------------------------------------------------------
+
+function pct(valor) {
+  return valor === null || valor === undefined ? "—" : `${formatar(valor)}%`;
+}
+
+function linhaReferencia(rotulo, valor, labels, cor) {
+  return {
+    type: "line", label: rotulo, data: labels.map(() => valor),
+    borderColor: cor, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false,
+  };
+}
+
+function barrasPorTime(dados, valorDe) {
+  return dados.times.map((time, i) => ({
+    type: "bar", label: time, backgroundColor: cores[i], borderRadius: 3,
+    data: dados.quadro.map((q) => valorDe(q, time)),
+  }));
+}
+
+const CONFIG_MEDIDAS = {
+  assimetria: {
+    quadro: (v) => formatar(v),
+    cabecalhoQuadro: "Variável",
+    detalhe: [
+      ["Variável", (l) => escaparHtml(l.variavel)],
+      ["Time", (l) => escaparHtml(l.time)],
+      ["n", (l) => l.n, true],
+      ["G1", (l) => formatar(l.g1), true],
+      ["Direção", (l) => escaparHtml(l.direcao)],
+      ["Intensidade", (l) => `<span class="etiqueta-classe classe-${l.intensidade.split(" ")[0]}">${escaparHtml(l.intensidade)}</span>`],
+      ["Bowley", (l) => formatar(l.bowley), true],
+      ["Média − mediana", (l) => formatar(l.media_menos_mediana), true],
+      ["G1 sem outliers", (l) => formatar(l.g1_sem_outliers), true],
+      ["Outliers", (l) => l.quantidade_outliers, true],
+    ],
+    grafico: (dados, labels) => ({
+      datasets: [
+        ...barrasPorTime(dados, (q, time) => q.valores[time]),
+        linhaReferencia("Limite moderada (±0,5)", 0.5, labels, "#ffd166"),
+        { ...linhaReferencia("", -0.5, labels, "#ffd166") },
+        linhaReferencia("Limite forte (±1)", 1, labels, "#ff7d7d"),
+        { ...linhaReferencia("", -1, labels, "#ff7d7d") },
+      ],
+      opcoes: opcoesPadrao({
+        titulo: "Coeficiente de assimetria G1 por variável e time",
+        eixoX: "Variável", eixoY: "G1 (adimensional)",
+      }),
+    }),
+  },
+  cv: {
+    quadro: (v) => pct(v),
+    cabecalhoQuadro: "Variável",
+    detalhe: [
+      ["Variável", (l) => escaparHtml(l.variavel)],
+      ["Time", (l) => escaparHtml(l.time)],
+      ["Média", (l) => formatar(l.media), true],
+      ["DP (n − 1)", (l) => formatar(l.desvio_padrao), true],
+      ["CV", (l) => pct(l.cv_percentual), true],
+      ["Leitura", (l) => `<span class="etiqueta-classe classe-${l.classe}">${escaparHtml(l.classe)}</span>`],
+      ["Validade", (l, d) => (l.cautela ? `<span class="aviso">cautela: média &lt; ${formatar(d.media_minima, 0)}</span>` : "adequado")],
+      ["Piso Poisson", (l) => pct(l.cv_poisson_ref), true],
+      ["CV IQR/Mediana", (l) => pct(l.cv_robusto_iqr), true],
+      ["G1", (l) => formatar(l.g1), true],
+    ],
+    grafico: (dados, labels) => ({
+      datasets: [
+        ...barrasPorTime(dados, (q, time) => q.valores[time]),
+        {
+          type: "line", label: "Piso Poisson 100/√média (média dos times)", showLine: false,
+          pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffd166", backgroundColor: "#ffd166",
+          data: labels.map((rotulo) => {
+            const linhas = dados.linhas.filter((l) => l.variavel === rotulo);
+            return linhas.reduce((soma, l) => soma + l.cv_poisson_ref, 0) / linhas.length;
+          }),
+        },
+        linhaReferencia(`Até ${dados.faixas[0]}%: consistente`, dados.faixas[0], labels, "#6fd3a5"),
+        linhaReferencia(`Acima de ${dados.faixas[1]}%: irregular`, dados.faixas[1], labels, "#ff7d7d"),
+      ],
+      opcoes: opcoesPadrao({
+        titulo: "Coeficiente de variação por variável e time",
+        eixoX: "Variável", eixoY: "CV (%)", beginAtZero: true,
+      }),
+    }),
+  },
+  iqr: {
+    quadro: (v) => formatar(v),
+    cabecalhoQuadro: "Variável (unidade)",
+    detalhe: [
+      ["Variável", (l) => `${escaparHtml(l.variavel)}<small class="unidade">${escaparHtml(l.unidade)}</small>`],
+      ["Time", (l) => escaparHtml(l.time)],
+      ["Q1", (l) => formatar(l.q1), true],
+      ["Q3", (l) => formatar(l.q3), true],
+      ["IQR", (l) => `<strong>${formatar(l.iqr)}</strong>`, true],
+      ["Amplitude", (l) => formatar(l.amplitude), true],
+      ["Amp. ÷ IQR", (l) => formatar(l.razao_amplitude_iqr), true],
+      ["DP", (l) => formatar(l.desvio_padrao), true],
+      ["σ robusto", (l) => formatar(l.sigma_robusto), true],
+      ["DP sem outliers", (l) => formatar(l.desvio_sem_outliers), true],
+      ["IQR sem outliers", (l) => formatar(l.iqr_sem_outliers), true],
+      ["Limites (1,5×IQR)", (l) => `${formatar(l.limite_inferior)} a ${formatar(l.limite_superior)}`, true],
+      ["Outliers 1,5×", (l) => (l.quantidade_outliers ? `${l.quantidade_outliers} (${l.outliers.map((v) => formatar(v)).join("; ")})` : "0"), true],
+      ["Outliers 3×", (l) => l.quantidade_outliers_3iqr, true],
+    ],
+    grafico: (dados, labels) => ({
+      datasets: [
+        ...barrasPorTime(dados, (q, time) => dados.linhas.find((l) => l.variavel === q.variavel && l.time === time).razao_amplitude_iqr),
+        linhaReferencia("Referência normal (≈ 4)", 4, labels, "#ffd166"),
+      ],
+      opcoes: opcoesPadrao({
+        titulo: "Amplitude dividida pelo IQR, por variável e time",
+        eixoX: "Variável", eixoY: "Amplitude ÷ IQR (adimensional)", beginAtZero: true,
+      }),
+    }),
+  },
+};
+
+async function carregarMedida() {
+  const bloco = document.querySelector("[data-pagina-medida]");
+  if (!bloco) {
+    return;
+  }
+  const medida = bloco.dataset.paginaMedida;
+  const config = CONFIG_MEDIDAS[medida];
+  const resposta = await fetch(`/api/${medida}`);
+  const dados = await resposta.json();
+
+  document.getElementById("quadro-medida").innerHTML =
+    `<thead><tr><th>${config.cabecalhoQuadro}</th>${dados.times.map((t) => `<th class="num">${escaparHtml(t)}</th>`).join("")}</tr></thead><tbody>`
+    + dados.quadro.map((q) => `<tr><td><strong>${escaparHtml(q.variavel)}</strong><small class="unidade">${escaparHtml(q.unidade)}</small></td>${dados.times.map((t) => `<td class="num">${config.quadro(q.valores[t])}</td>`).join("")}</tr>`).join("")
+    + "</tbody>";
+
+  document.getElementById("detalhe-medida").innerHTML =
+    `<thead><tr>${config.detalhe.map(([rotulo, , num]) => `<th${num ? " class=\"num\"" : ""}>${rotulo}</th>`).join("")}</tr></thead><tbody>`
+    + dados.linhas.map((linha, indice) => `<tr class="${indice % dados.times.length === 0 ? "inicio-grupo" : ""}">${config.detalhe.map(([, valor, num]) => `<td${num ? " class=\"num\"" : ""}>${valor(linha, dados)}</td>`).join("")}</tr>`).join("")
+    + "</tbody>";
+
+  document.getElementById("interpretacao-medida").innerHTML = dados.secoes.map((secao, i) =>
+    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`
+  ).join("");
+
+  const canvas = document.getElementById("grafico-medida");
+  if (canvas && typeof Chart !== "undefined") {
+    const labels = dados.quadro.map((q) => q.variavel);
+    const { datasets, opcoes } = config.grafico(dados, labels);
+    // Linhas de referência do lado negativo (rótulo vazio) ficam fora da legenda.
+    opcoes.plugins.legend.labels.filter = (item) => item.text !== "";
+    destruirGrafico("medida");
+    graficos.medida = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
+  }
+}
+
+carregarMedida();

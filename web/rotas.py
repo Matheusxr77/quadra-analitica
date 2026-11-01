@@ -53,6 +53,35 @@ def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
     def api_qualidade():
         return jsonify(servico.qualidade())
 
+    @rotas.get("/assimetria")
+    def pagina_assimetria():
+        return render_template(
+            "assimetria.html",
+            times=TIMES_ANALISADOS,
+            variaveis=VARIAVEIS_ANALISADAS,
+            pagina_ativa="assimetria",
+        )
+
+    @rotas.get("/cv")
+    def pagina_cv():
+        return render_template("cv.html", pagina_ativa="cv")
+
+    @rotas.get("/iqr")
+    def pagina_iqr():
+        return render_template("iqr.html", pagina_ativa="iqr")
+
+    @rotas.get("/api/assimetria")
+    def api_assimetria():
+        return jsonify(servico.assimetria())
+
+    @rotas.get("/api/cv")
+    def api_cv():
+        return jsonify(servico.cv())
+
+    @rotas.get("/api/iqr")
+    def api_iqr():
+        return jsonify(servico.iqr())
+
     @rotas.get("/api/descritivas")
     def api_descritivas():
         return jsonify(servico.tabela_descritiva())

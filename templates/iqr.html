@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Intervalo interquartil{% endblock %}
+{% block bibliotecas %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">ESTATÍSTICA DESCRITIVA · DISPERSÃO ROBUSTA</p><h1>Intervalo interquartil (IQR)</h1><p class="subtitulo">Largura da faixa que contém os 50% centrais dos jogos e base da regra de outliers do boxplot.</p></div><div class="status"><i></i> Calculado no servidor</div></header>
+
+<section class="painel bloco-formula" data-pagina-medida="iqr">
+  <p class="sobrelinha">FÓRMULA UTILIZADA</p>
+  <div class="formula">IQR = Q<sub>3</sub> − Q<sub>1</sub>, &nbsp; Q<sub>p</sub> = x<sub>(⌊h⌋)</sub> + (h − ⌊h⌋)(x<sub>(⌊h⌋+1)</sub> − x<sub>(⌊h⌋)</sub>), &nbsp; h = (n − 1)·p + 1</div>
+  <div class="formula formula-secundaria">Limites de Tukey: Q<sub>1</sub> − k·IQR e Q<sub>3</sub> + k·IQR, com k = 1,5 (k = 3 para comparação) &nbsp;·&nbsp; σ robusto = IQR / 1,349</div>
+  <ul class="convencoes"><li>Quartis por <strong>interpolação linear</strong> (padrão numpy/pandas, tipo 7) — o mesmo método da tabela descritiva e do boxplot.</li><li>Valores na unidade de cada variável (por jogo), 2 casas decimais.</li></ul>
+</section>
+
+<section class="grade-graficos">
+  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">QUADRO-RESUMO</p><h3>IQR por variável × time</h3><p>Linhas = variáveis, colunas = times; unidade de cada variável</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="quadro-medida"></table></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><h3>Amplitude ÷ IQR</h3><p>Razão adimensional; acima de 4 a amplitude é esticada por extremos</p></div></div><div class="area-grafico"><canvas id="grafico-medida"></canvas></div></article>
+</section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">DETALHE</p><h3>Q1, Q3 e IQR lado a lado, com amplitude, desvio padrão e outliers</h3><p>DP e IQR recalculados sem os outliers mostram qual medida é robusta</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="detalhe-medida"></table></div></section>
+
+<section class="painel secao-inferior leitura"><div class="cabecalho-painel"><div><p class="sobrelinha">INTERPRETAÇÃO</p><h3>Análise crítica gerada a partir dos números</h3></div></div><div id="interpretacao-medida" class="interpretacao-secoes"></div></section>
+{% endblock %}
