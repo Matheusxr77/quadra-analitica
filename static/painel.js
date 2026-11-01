@@ -248,13 +248,193 @@ async function carregarTabelaDescritiva() {
   if (seletorVariavel) destacarLinhasDescritivas(seletorVariavel.value);
 }
 
+// ---------------------------------------------------------------------------
+// Página de Qualidade dos dados.
+// ---------------------------------------------------------------------------
+
+const CORES_METODOS = { zscore: "#55b6ff", iqr: "#6fd3a5", grubbs: "#ffad66", ecod: "#c49bff" };
+const ROTULOS_METODOS = { zscore: "Z-score", iqr: "IQR", grubbs: "Grubbs", ecod: "ECOD", knn: "K-NN", dbscan: "DBSCAN", lof: "LOF" };
+
+// cabecalhos: [[rótulo, numérico?]]; linhas: [{celulas: [html], classe}]
+function preencherTabela(id, cabecalhos, linhas) {
+  const tabela = document.getElementById(id);
+  if (!tabela) return;
+  tabela.innerHTML = `<thead><tr>${cabecalhos.map(([r, num]) => `<th${num ? " class=\"num\"" : ""}>${r}</th>`).join("")}</tr></thead><tbody>`
+    + linhas.map((linha) => `<tr class="${linha.classe || ""}">${linha.celulas.map((c, i) => `<td${cabecalhos[i][1] ? " class=\"num\"" : ""}>${c}</td>`).join("")}</tr>`).join("")
+    + "</tbody>";
+}
+
+function inteiro(valor) {
+  return valor === null || valor === undefined ? "—" : Number(valor).toLocaleString("pt-BR");
+}
+
+function listaValores(valores) {
+  return valores.length ? `<small>${valores.map((v) => formatar(v)).join("; ")}</small>` : "";
+}
+
+function contagemComValores(item) {
+  return `<strong>${item.quantidade}</strong>${item.quantidade ? " " + listaValores(item.valores) : ""}`;
+}
+
+function etiquetaSimNao(sim, textoSim, textoNao) {
+  return `<span class="etiqueta-classe ${sim ? "classe-forte" : "classe-consistente"}">${sim ? textoSim : textoNao}</span>`;
+}
+
+function cartaoTexto(titulo, subtitulo, itens) {
+  return `<div class="cartao-texto"><h4>${escaparHtml(titulo)}</h4>${subtitulo ? `<p class="cartao-sub">${escaparHtml(subtitulo)}</p>` : ""}<dl>${itens.filter(([, v]) => v).map(([r, v]) => `<dt>${r}</dt><dd>${escaparHtml(v)}</dd>`).join("")}</dl></div>`;
+}
+
 async function carregarQualidade() {
-  if (!document.getElementById("qualidade-conteudo")) {
+  if (!document.querySelector("[data-pagina-qualidade]")) {
     return;
   }
-  const resposta = await fetch("/api/qualidade"); const dados = await resposta.json();
-  const ausentes = dados.campos_ausentes.reduce((total, item) => total + item.quantidade, 0);
-  document.getElementById("qualidade-conteudo").innerHTML = `<div class="qualidade-grade"><div class="qualidade-bloco"><h4>Diagnóstico da base</h4><p><strong>${ausentes}</strong> valores ausentes · <strong>${dados.duplicatas}</strong> duplicatas após deduplicação · <strong>${dados.inconsistencias.valores_negativos_nas_variaveis}</strong> valores negativos nas métricas analisadas.</p><p>As datas foram convertidas para data real e percentuais mistos foram normalizados para fração. O dataset final tem 149 jogos dos dois times.</p><h4>Por que os testes de missing não foram aplicados?</h4><p>Little, Jamshidian-Jalal, LS e Fairclough pressupõem campos ausentes. Como não há ausentes no recorte, aplicar esses testes produziria uma conclusão artificial; a ausência foi registrada e a metodologia fica documentada para futuras atualizações.</p></div><div class="qualidade-bloco"><h4>Detectores de valores extremos</h4>${Object.entries(dados.outliers_por_metodo).map(([nome, valor]) => `<div class="metodo"><span>${nome}</span><b>${valor} jogos</b></div>`).join("")}<ul>${dados.metodologia.slice(0, 5).map((texto) => `<li>${texto}</li>`).join("")}</ul></div></div>`;
+  const resposta = await fetch("/api/qualidade");
+  const dados = await resposta.json();
+  const times = dados.times;
+
+  // Cartões-resumo
+  const totalAusentes = dados.ausentes.reduce((t, l) => t + (l.fonte || 0), 0);
+  const dup = dados.duplicatas.fonte;
+  const violacoes = dados.dominio.regras.reduce((t, r) => t + r.violacoes_fonte, 0);
+  const cartoes = [
+    ["Valores ausentes (fonte)", inteiro(totalAusentes), `em ${inteiro(dup.registros * dados.ausentes.length)} células`],
+    ["Duplicatas (fonte bruta)", inteiro(dup.linha_inteira + dup.chave_time_jogo), `linha inteira ${dup.linha_inteira} · chave time+jogo ${dup.chave_time_jogo}`],
+    ["Violações de domínio", inteiro(violacoes), `${dados.dominio.regras.length} regras verificadas na fonte`],
+    ["Jogos com prorrogação", inteiro(dados.dominio.jogos_prorrogacao.length), "MIN 265 ou 290 no recorte — válidos"],
+  ];
+  document.getElementById("q-cartoes").innerHTML = cartoes.map(([r, v, d]) =>
+    `<div class="cartao"><div class="rotulo">${r}</div><div class="valor">${v}</div><div class="detalhe">${escaparHtml(d)}</div></div>`).join("");
+
+  // 1. Ausentes por coluna
+  const celulaAusente = (q, p) => (q === null ? "—" : `${inteiro(q)} <small>(${formatar(p)}%)</small>`);
+  preencherTabela("q-ausentes",
+    [["Coluna"], ["Descrição"], [`Fonte completa (n = ${inteiro(dup.registros)})`, true], [`Recorte bruto (n = ${inteiro(dados.duplicatas.recorte.registros)})`, true], [`Após tratamento (n = ${inteiro(dados.duplicatas.registros_tratados)})`, true]],
+    dados.ausentes.map((l) => ({ celulas: [`<code>${escaparHtml(l.coluna)}</code>`, escaparHtml(l.nome), celulaAusente(l.fonte, l.fonte_pct), celulaAusente(l.recorte, l.recorte_pct), celulaAusente(l.tratado, l.tratado_pct)] })));
+
+  // 2. Mecanismos
+  document.getElementById("q-mecanismos").innerHTML = dados.mecanismos.map((m) =>
+    cartaoTexto(`${m.sigla} — ${m.nome}`, "", [["Definição", m.definicao], ["Exemplo na NBA", m.exemplo], ["Consequência", m.consequencia]])).join("");
+
+  // 3. Testes + demonstração
+  document.getElementById("q-testes").innerHTML = dados.testes_ausencia.map((t) =>
+    cartaoTexto(t.nome, t.referencia, [["Hipóteses", t.hipotese], ["Como funciona", t.como], ["Estatística", t.estatistica], ["Decisão", t.decisao], ["Por que usar", t.porque], ["Limitações", t.limitacoes], ["Nesta base", t.status_base_real], ["Neste site", t.implementado ? "Implementado e aplicado na demonstração abaixo." : "Apresentado em teoria (não implementado)."]])).join("");
+  const demo = dados.demonstracao;
+  document.getElementById("q-demo-nota").textContent =
+    `Cópias do recorte com ${demo.variavel_alvo} apagado de propósito (semente ${demo.semente}); variáveis: ${demo.variaveis.join(", ")}. Decisão com α = ${formatar(demo.alfa)}. A base real não é alterada.`;
+  preencherTabela("q-demo",
+    [["Cenário"], ["Como a ausência foi gerada"], ["Ausentes", true], ["Little d²", true], ["gl", true], ["p-valor", true], ["Little"], ["Fairclough LR", true], ["gl", true], ["p-valor", true], ["Fairclough"]],
+    demo.cenarios.map((c) => ({ celulas: [
+      `<strong>${escaparHtml(c.nome)}</strong>`, `<small>${escaparHtml(c.descricao)}</small>`, `${c.ausentes} de ${c.n}`,
+      formatar(c.little.estatistica), c.little.gl, formatar(c.little.p_valor, 4), etiquetaSimNao(c.little.rejeita_mcar, "rejeita MCAR", "não rejeita MCAR"),
+      formatar(c.fairclough.estatistica), c.fairclough.gl, formatar(c.fairclough.p_valor, 4), etiquetaSimNao(c.fairclough.rejeita_mcar, "rejeita MCAR", "não rejeita MCAR"),
+    ] })));
+  const variaveisCoef = demo.cenarios[0].fairclough.coeficientes.map((c) => c.variavel);
+  preencherTabela("q-demo-coef",
+    [["Fairclough: preditor (padronizado)"], ...demo.cenarios.flatMap((c) => [[`${c.nome}: razão de chances`, true], ["p (Wald)", true]])],
+    variaveisCoef.map((v, i) => ({ celulas: [v, ...demo.cenarios.flatMap((c) => [formatar(c.fairclough.coeficientes[i].razao_chances), formatar(c.fairclough.coeficientes[i].p_valor, 4)])] })));
+
+  // 4. Duplicatas
+  const rec = dados.duplicatas.recorte;
+  preencherTabela("q-duplicatas", [["Verificação"], ["Fonte completa", true], ["Recorte do grupo", true]], [
+    { celulas: ["Registros", inteiro(dup.registros), inteiro(rec.registros)] },
+    { celulas: ["Linhas inteiras repetidas", inteiro(dup.linha_inteira), inteiro(rec.linha_inteira)] },
+    { celulas: ["Chave (TEAM_NAME, Game_ID) repetida", inteiro(dup.chave_time_jogo), inteiro(rec.chave_time_jogo)] },
+    { celulas: ["Game_ID distintos", inteiro(dup.jogos_distintos), "—"] },
+    { celulas: ["Game_ID fora do par (≠ 2 registros)", inteiro(dup.jogos_fora_do_par), "—"] },
+    { celulas: ["Removidos pelo tratamento", "—", inteiro(dados.duplicatas.removidos_no_tratamento)] },
+  ]);
+
+  // 5. Zeros e negativos
+  const comOcorrencia = dados.zeros_negativos.filter((z) => z.zeros || z.negativos);
+  preencherTabela("q-zeros", [["Coluna"], ["Zeros", true], ["Negativos", true], ["Significado"]],
+    comOcorrencia.map((z) => ({ celulas: [`<code>${escaparHtml(z.coluna)}</code><small class="unidade">${escaparHtml(z.nome)}</small>`, inteiro(z.zeros), inteiro(z.negativos), `<small>${escaparHtml(z.significado)}</small>`] }))
+      .concat([{ celulas: [`<small>Demais ${dados.zeros_negativos.length - comOcorrencia.length} colunas</small>`, "0", "0", "<small>sem zeros nem negativos.</small>"] }]));
+
+  // 6. Domínio
+  preencherTabela("q-dominio", [["Regra"], ["Justificativa"], ["Violações na fonte", true], ["Violações no recorte", true]],
+    dados.dominio.regras.map((r) => ({ celulas: [`<strong>${escaparHtml(r.regra)}</strong>`, `<small>${escaparHtml(r.descricao)}</small>`, inteiro(r.violacoes_fonte), inteiro(r.violacoes_recorte)] })));
+  const fonteMin = Object.fromEntries(dados.dominio.minutos_fonte.map((m) => [m.minutos, m.registros]));
+  preencherTabela("q-minutos", [["MIN", true], ["Prorrogações", true], ["Registros na fonte", true], ["Registros no recorte", true], ["Leitura"]],
+    dados.dominio.minutos_recorte.map((m) => ({ celulas: [inteiro(m.minutos), m.prorrogacoes ?? "fora", inteiro(fonteMin[m.minutos]), inteiro(m.registros), `<small>${m.prorrogacoes === 0 ? "tempo normal: 48 min × 5 jogadores" : m.prorrogacoes ? `240 + ${m.prorrogacoes} × 25 (5 min × 5 jogadores)` : "fora do domínio 240 + 25k"}</small>`] })));
+  preencherTabela("q-prorrogacao", [["Time"], ["Data"], ["Confronto"], ["MIN", true], ["Prorrogações", true], ["PTS", true]],
+    dados.dominio.jogos_prorrogacao.map((j) => ({ celulas: [escaparHtml(j.time), j.data, escaparHtml(j.confronto), inteiro(j.minutos), j.prorrogacoes, inteiro(j.pontos)] })));
+
+  // 7. Outliers por coluna
+  const par = dados.parametros;
+  document.getElementById("q-parametros").textContent =
+    `Z-score |z| > ${formatar(par.limiar_zscore, 0)} · IQR 1,5×IQR (Tukey) · Grubbs bilateral iterativo, α = ${formatar(par.alfa_grubbs)} · ECOD (pyod), contamination = ${formatar(par.contaminacao_ecod)}`;
+  const metodos = ["zscore", "iqr", "grubbs", "ecod"];
+  const linhasOutliers = [];
+  dados.outliers_por_coluna.forEach((col) => {
+    times.forEach((time, i) => {
+      const r = col.times[time];
+      linhasOutliers.push({
+        classe: [i === 0 ? "inicio-grupo" : "", col.analisada ? "linha-destacada" : ""].join(" "),
+        celulas: [
+          i === 0 ? `<code>${escaparHtml(col.coluna)}</code><small class="unidade">${escaparHtml(col.nome)}${col.variavel ? " · analisada" : ""}</small>` : "",
+          escaparHtml(time), r.n,
+          `${contagemComValores(r.zscore)}<small class="unidade">máx. |z| = ${formatar(r.zscore.z_maximo)}</small>`,
+          `${contagemComValores(r.iqr)}<small class="unidade">[${formatar(r.iqr.limite_inferior)}; ${formatar(r.iqr.limite_superior)}]</small>`,
+          contagemComValores(r.grubbs),
+          r.grubbs.shapiro_p === null ? "—" : `${formatar(r.grubbs.shapiro_p, 4)}${r.grubbs.shapiro_p < 0.05 ? " <span class=\"aviso\">não normal</span>" : ""}`,
+          contagemComValores(r.ecod),
+        ],
+      });
+    });
+  });
+  preencherTabela("q-outliers", [["Coluna"], ["Time"], ["n", true], ["Z-score"], ["IQR / Tukey"], ["Grubbs"], ["Shapiro-Wilk p", true], ["ECOD"]], linhasOutliers);
+
+  const canvas = document.getElementById("grafico-outliers-coluna");
+  if (canvas && typeof Chart !== "undefined") {
+    const labels = dados.outliers_por_coluna.map((c) => c.coluna);
+    const datasets = metodos.map((m) => ({
+      label: ROTULOS_METODOS[m], backgroundColor: CORES_METODOS[m], borderRadius: 3,
+      data: dados.outliers_por_coluna.map((c) => times.reduce((t, time) => t + c.times[time][m].quantidade, 0)),
+    }));
+    const opcoes = opcoesPadrao({ titulo: "Outliers por coluna e método (soma dos dois times)", eixoX: "Coluna de box-score", eixoY: "Valores marcados (nº de jogos)", beginAtZero: true });
+    opcoes.scales.y.ticks.precision = 0;
+    destruirGrafico("outliersColuna");
+    graficos.outliersColuna = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
+  }
+
+  // 8. Grubbs passo a passo (7 variáveis analisadas)
+  const linhasGrubbs = [];
+  dados.outliers_por_coluna.filter((c) => c.analisada).forEach((col) => {
+    times.forEach((time, i) => {
+      col.times[time].grubbs.passos.forEach((p, k) => {
+        linhasGrubbs.push({
+          classe: i === 0 && k === 0 ? "inicio-grupo" : "",
+          celulas: [k === 0 ? `${escaparHtml(col.variavel)} <small class="unidade">${escaparHtml(col.coluna)}</small>` : "", k === 0 ? escaparHtml(time) : "", k + 1, p.n,
+            formatar(p.media), formatar(p.desvio), formatar(p.valor), formatar(p.g, 4), formatar(p.g_critico, 4),
+            etiquetaSimNao(p.significativo, "outlier — removido", "não significativo — para")],
+        });
+      });
+    });
+  });
+  preencherTabela("q-grubbs", [["Variável"], ["Time"], ["Passo", true], ["n", true], ["Média", true], ["DP", true], ["Valor testado", true], ["G", true], ["G crítico", true], ["Decisão"]], linhasGrubbs);
+
+  // 9. Multivariados
+  const mv = dados.outliers_multivariados;
+  const linhasMv = [];
+  times.forEach((time) => {
+    const info = mv.times[time];
+    ["ecod", "knn", "dbscan", "lof"].forEach((m, k) => {
+      const jogos = info.metodos[m].jogos;
+      linhasMv.push({
+        classe: k === 0 ? "inicio-grupo" : "",
+        celulas: [k === 0 ? `${escaparHtml(time)}<small class="unidade">${info.n} jogos · ${info.em_todos} marcados pelos 4</small>` : "", ROTULOS_METODOS[m], `<strong>${info.metodos[m].quantidade}</strong>`,
+          jogos.map((j) => `<span class="outlier-item">${j.data} ${escaparHtml(j.confronto)} <small>${mv.colunas.map((c) => `${c} ${formatar(j.valores[c], 0)}`).join(" · ")}</small></span>`).join("") || "<small>nenhum</small>"],
+      });
+    });
+  });
+  preencherTabela("q-multivariados", [["Time"], ["Método"], ["Jogos", true], ["Quais (data, confronto e valores)"]], linhasMv);
+
+  // 10. Teoria
+  document.getElementById("q-metodos").innerHTML = dados.metodos.map((m) =>
+    `<div class="cartao-texto"><h4>${escaparHtml(m.nome)} <span class="etiqueta-classe">${escaparHtml(m.tipo)}</span></h4><div class="formula formula-secundaria">${escaparHtml(m.formula)}</div><dl><dt>Ideia</dt><dd>${escaparHtml(m.como)}</dd><dt>Premissas</dt><dd>${escaparHtml(m.premissas)}</dd><dt>Parâmetros</dt><dd>${escaparHtml(m.parametros)}</dd></dl></div>`).join("");
+
+  document.getElementById("interpretacao-qualidade").innerHTML = dados.secoes.map((secao, i) =>
+    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`).join("");
 }
 
 async function carregarDicionario() {

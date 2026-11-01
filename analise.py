@@ -10,8 +10,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 
 CAMINHO_DADOS = (
     Path(__file__).parent / "dados" / "stats_times_regular_final.csv"
@@ -365,66 +363,3 @@ def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
             )[2],
         })
     return {"linhas": int(len(dados)), "colunas": int(len(dados.columns)), "campos": linhas}
-
-
-def _contar_metodos_outlier(matriz: np.ndarray) -> dict[str, int]:
-    """Conta quantos jogos cada método considera atípicos.
-
-    Os métodos recebem as sete variáveis juntas. Antes disso, os valores são
-    padronizados para que Pontos não pese mais apenas por ter números maiores
-    que BLK ou STL.
-    """
-    if len(matriz) < 5:
-        return {metodo: 0 for metodo in ("Z-score", "Grubbs", "ECOD", "K-NN", "DBSCAN", "LOF")}
-    padronizada = (matriz - matriz.mean(axis=0)) / np.where(matriz.std(axis=0) == 0, 1, matriz.std(axis=0))
-    zscore = np.any(np.abs(padronizada) > 3, axis=1)
-    vizinhos = NearestNeighbors(n_neighbors=min(6, len(matriz))).fit(padronizada)
-    distancias, _ = vizinhos.kneighbors(padronizada)
-    knn = distancias[:, -1] > np.quantile(distancias[:, -1], 0.95)
-    dbscan = DBSCAN(eps=2.2, min_samples=5).fit_predict(padronizada) == -1
-    lof = LocalOutlierFactor(n_neighbors=min(20, len(matriz) - 1), contamination="auto")
-    lof_flags = lof.fit_predict(padronizada) == -1
-    ecod = np.zeros(len(matriz), dtype=bool)
-    for coluna in range(padronizada.shape[1]):
-        cauda = np.abs(stats.rankdata(padronizada[:, coluna]) / (len(matriz) + 1) - 0.5)
-        ecod |= cauda > np.quantile(cauda, 0.98)
-    # O Grubbs avalia uma variável por vez; aqui marcamos jogos com algum
-    # valor muito distante nas variáveis analisadas.
-    grubbs = np.any(np.abs(padronizada) > 2.8, axis=1)
-    return {
-        "Z-score": int(zscore.sum()),
-        "Grubbs": int(grubbs.sum()),
-        "ECOD": int(ecod.sum()),
-        "K-NN": int(knn.sum()),
-        "DBSCAN": int(dbscan.sum()),
-        "LOF": int(lof_flags.sum()),
-    }
-
-
-def calcular_qualidade(dados: pd.DataFrame) -> dict[str, Any]:
-    campos_ausentes = [
-        {"campo": coluna, "quantidade": int(dados[coluna].isna().sum())}
-        for coluna in dados.columns
-    ]
-    matriz = dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]].dropna().to_numpy()
-    por_metodo = _contar_metodos_outlier(matriz)
-    return {
-        "duplicatas": int(dados.duplicated(subset=["TEAM_NAME", "Game_ID"]).sum()),
-        "campos_ausentes": campos_ausentes,
-        "inconsistencias": {
-            "datas_invalidas": int(dados["GAME_DATE"].isna().sum()),
-            "percentuais_fora_de_0_a_1": 0,
-            "valores_negativos_nas_variaveis": int(
-                (dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]] < 0).sum().sum()
-            ),
-        },
-        "outliers_por_metodo": por_metodo,
-        "metodologia": [
-            "Z-score: sinaliza observações a mais de 3 desvios padrão.",
-            "IQR/boxplot: usa limites Q1 - 1,5×IQR e Q3 + 1,5×IQR; é o critério principal.",
-            "Grubbs: compara o extremo mais distante com a distribuição t; exige normalidade aproximada.",
-            "ECOD: identifica caudas empíricas sem assumir distribuição paramétrica.",
-            "K-NN, DBSCAN e LOF: detectam isolamento/densidade após padronização das sete variáveis.",
-            "Little, Jamshidian-Jalal, LS e Fairclough são testes para mecanismos de missing; com zero ausentes, não há hipótese de missing a testar.",
-        ],
-    }

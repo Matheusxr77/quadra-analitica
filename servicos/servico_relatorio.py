@@ -9,11 +9,11 @@ from analise import (
     TIMES_ANALISADOS,
     calcular_dicionario,
     calcular_estatisticas,
-    calcular_qualidade,
     calcular_tabela_descritiva,
 )
 from excecoes import ErroAplicacao
 from interpretacao import calcular_assimetria, calcular_cv, calcular_iqr
+from qualidade import calcular_qualidade
 from infraestrutura.repositorio_dados import RepositorioDados
 
 
@@ -22,6 +22,7 @@ class ServicoRelatorio:
 
     def __init__(self, repositorio: RepositorioDados) -> None:
         self._repositorio = repositorio
+        self._qualidade: dict[str, Any] | None = None
 
     def estatisticas(self, time: str, variavel: str) -> dict[str, Any]:
         if time != "Todos" and time not in TIMES_ANALISADOS:
@@ -46,7 +47,12 @@ class ServicoRelatorio:
         return calcular_dicionario(self._obter_dados())
 
     def qualidade(self) -> dict[str, Any]:
-        return calcular_qualidade(self._obter_dados())
+        # Os dados são estáticos durante a execução e o diagnóstico (ECOD, LOF,
+        # EM do teste de Little) leva ~0,5 s: calcula uma vez e reaproveita.
+        if self._qualidade is None:
+            fonte, recorte = self._repositorio.obter_bases_brutas()
+            self._qualidade = calcular_qualidade(self._obter_dados(), fonte, recorte)
+        return self._qualidade
 
     def _obter_dados(self) -> pd.DataFrame:
         return self._repositorio.obter_dados()

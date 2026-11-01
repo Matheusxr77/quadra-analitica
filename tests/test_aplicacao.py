@@ -227,3 +227,132 @@ def test_estatisticas_incluem_histograma_com_kde():
     hist = corpo["histograma"]
     assert hist["regra"].startswith("Freedman")
     assert set(hist["times"]) == {"Dallas Mavericks", "Indiana Pacers"}
+
+
+# --- Qualidade dos dados ----------------------------------------------------
+
+def test_valor_critico_de_grubbs_confere_com_a_tabela():
+    from qualidade import valor_critico_grubbs
+
+    # Tabela de Grubbs (bilateral, α = 0,05): n = 10 → 2,290; n = 20 → 2,709.
+    assert abs(valor_critico_grubbs(10) - 2.290) < 0.001
+    assert abs(valor_critico_grubbs(20) - 2.709) < 0.001
+
+
+def test_grubbs_iterativo_remove_extremos_ate_passo_nao_significativo():
+    import numpy as np
+
+    from qualidade import grubbs_iterativo
+
+    base = list(np.random.default_rng(0).normal(50, 2, 30))
+    sem_extremos = grubbs_iterativo(pd.Series(base))
+    assert sem_extremos["valores"] == []
+    assert sem_extremos["passos"][-1]["significativo"] is False
+
+    resultado = grubbs_iterativo(pd.Series(base + [80.0, 75.0]))
+    assert sorted(resultado["valores"]) == [75.0, 80.0]
+    assert [p["significativo"] for p in resultado["passos"]] == [True, True, False]
+    primeiro = resultado["passos"][0]
+    serie = pd.Series(base + [80.0, 75.0])
+    assert abs(primeiro["g"] - (80 - serie.mean()) / serie.std(ddof=1)) < 1e-12
+
+
+def test_ecod_usa_o_pyod_de_verdade():
+    import numpy as np
+    from pyod.models.ecod import ECOD
+
+    from qualidade import CONTAMINACAO_ECOD, ecod_rotulos
+
+    matriz = np.random.default_rng(1).normal(size=(80, 3))
+    esperado = ECOD(contamination=CONTAMINACAO_ECOD).fit(matriz)
+    obtido = ecod_rotulos(matriz)
+    assert (obtido["rotulos"] == esperado.labels_.astype(bool)).all()
+    assert np.allclose(obtido["scores"], esperado.decision_scores_)
+
+
+def test_teste_de_little_calibrado_e_graus_de_liberdade():
+    import numpy as np
+
+    from qualidade import teste_little
+
+    rejeicoes = 0
+    for semente in range(60):
+        gerador = np.random.default_rng(semente)
+        x = gerador.multivariate_normal([0, 0, 0], [[1, .5, .3], [.5, 1, .4], [.3, .4, 1]], size=120)
+        x[gerador.random(120) < 0.2, 0] = np.nan
+        resultado = teste_little(x)
+        assert resultado["gl"] == 2  # padrões: (3 colunas) + (2 colunas) − 3
+        rejeicoes += resultado["rejeita_mcar"]
+    assert rejeicoes / 60 < 0.15  # sob MCAR, ≈ α = 5%
+
+    gerador = np.random.default_rng(7)
+    x = gerador.multivariate_normal([0, 0], [[1, .6], [.6, 1]], size=200)
+    x[x[:, 1] > 0.3, 0] = np.nan  # MAR: depende da coluna observada
+    assert teste_little(x)["rejeita_mcar"]
+
+
+def test_demonstracao_mcar_nao_rejeita_e_mar_rejeita():
+    from infraestrutura.repositorio_dados import RepositorioDados
+    from qualidade import demonstrar_testes_ausencia
+
+    raiz = Path(__file__).parents[1] / "dados"
+    dados = RepositorioDados(raiz / "stats_times_regular_final.csv").obter_dados()
+    cenarios = {c["chave"]: c for c in demonstrar_testes_ausencia(dados)["cenarios"]}
+    assert not cenarios["mcar"]["little"]["rejeita_mcar"]
+    assert not cenarios["mcar"]["fairclough"]["rejeita_mcar"]
+    assert cenarios["mar"]["little"]["rejeita_mcar"]
+    assert cenarios["mar"]["fairclough"]["rejeita_mcar"]
+
+
+def test_duplicatas_contadas_na_base_bruta_antes_do_tratamento():
+    from qualidade import contar_duplicatas
+
+    bruto = pd.DataFrame({"TEAM_NAME": ["A", "A", "B", "B"], "Game_ID": [1, 1, 1, 2], "PTS": [100, 100, 90, 95]})
+    tratado = bruto.drop_duplicates(subset=["TEAM_NAME", "Game_ID"])
+    resultado = contar_duplicatas(bruto, bruto, tratado)
+    assert resultado["fonte"]["linha_inteira"] == 1
+    assert resultado["fonte"]["chave_time_jogo"] == 1
+    assert resultado["removidos_no_tratamento"] == 1
+
+
+def test_minutos_com_prorrogacao_sao_dominio_valido():
+    from qualidade import classificar_minutos
+
+    assert classificar_minutos(240) == 0
+    assert classificar_minutos(265) == 1
+    assert classificar_minutos(290) == 2
+    assert classificar_minutos(250) is None
+    assert classificar_minutos(200) is None
+
+
+def test_api_e_pagina_de_qualidade():
+    cliente = criar_cliente()
+    corpo = cliente.get("/api/qualidade").get_json()
+    fonte = pd.read_csv(Path(__file__).parents[1] / "dados" / "stats_times_regular_final.csv")
+    assert [linha["coluna"] for linha in corpo["ausentes"]] == list(fonte.columns)
+    assert {m["sigla"] for m in corpo["mecanismos"]} == {"MCAR", "MAR", "MNAR"}
+    assert len(corpo["testes_ausencia"]) == 4
+    assert {m["chave"] for m in corpo["metodos"]} == {"zscore", "iqr", "grubbs", "ecod", "knn", "dbscan", "lof"}
+    assert len(corpo["outliers_por_coluna"]) == 18
+    assert len(corpo["dominio"]["jogos_prorrogacao"]) == 8
+    # IQR por coluna = mesma contagem da tabela descritiva (mesmos limites de Tukey).
+    descritiva = cliente.get("/api/descritivas").get_json()
+    por_coluna = {c["coluna"]: c for c in corpo["outliers_por_coluna"]}
+    from analise import MAPA_VARIAVEIS
+    for grupo in descritiva["variaveis"]:
+        coluna = por_coluna[MAPA_VARIAVEIS[grupo["variavel"]]]
+        for time, item in grupo["times"].items():
+            assert coluna["times"][time]["iqr"]["quantidade"] == item["quantidade_outliers"]
+    pagina = cliente.get("/qualidade").data.decode("utf-8")
+    for trecho in ("MCAR, MAR e MNAR", "Grubbs", "ECOD", "Ausentes por coluna"):
+        assert trecho in pagina
+
+
+def test_importar_a_aplicacao_nao_carrega_pyod():
+    import subprocess
+    import sys
+
+    codigo = "import sys, app; print('pyod' in sys.modules)"
+    saida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True,
+                           cwd=Path(__file__).parents[1], check=True)
+    assert saida.stdout.strip() == "False"
