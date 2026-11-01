@@ -1,2 +1,762 @@
-:root{--fundo:#0b1018;--painel:#121a25;--painel-2:#172332;--texto:#e9eef5;--mudo:#8998aa;--azul:#55b6ff;--laranja:#ffad66;--verde:#64d9a0;--borda:#263546}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--fundo);color:var(--texto);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.5}.barra-lateral{position:fixed;inset:0 auto 0 0;width:238px;background:#0d141e;border-right:1px solid var(--borda);padding:30px 20px;display:flex;flex-direction:column}.marca{display:flex;gap:11px;align-items:center;font-size:15px;letter-spacing:2px}.marca strong{display:block}.marca small{display:block;color:var(--mudo);font-size:9px;letter-spacing:3px;margin-top:1px}.marca-icone{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--azul);color:#07111d;font-weight:800;font-size:20px}.rotulo-menu,.sobrelinha,label{color:var(--mudo);font-size:10px;font-weight:700;letter-spacing:1.7px}.rotulo-menu{margin:62px 12px 12px}.item-menu{padding:11px 12px;margin:2px 0;color:var(--mudo);text-decoration:none;border-radius:7px;font-size:13px}.item-menu:hover,.item-menu.ativo{color:var(--texto);background:#172536}.item-menu.ativo{border-left:2px solid var(--azul)}.rodape-menu{margin-top:auto;color:#566578;font-size:11px;line-height:1.7}.conteudo{margin-left:238px;padding:40px 5.5%;max-width:1550px}.cabecalho{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px}.sobrelinha{margin:0 0 7px}.cabecalho h1,h2,h3{margin:0}.cabecalho h1{font-size:35px;letter-spacing:-1px}.subtitulo{color:var(--mudo);margin:7px 0}.status{border:1px solid #28503f;color:var(--verde);padding:8px 13px;border-radius:20px;font-size:11px}.status i{display:inline-block;width:6px;height:6px;background:var(--verde);border-radius:50%;margin-right:7px}.painel{background:var(--painel);border:1px solid var(--borda);border-radius:12px;padding:22px}.controles{display:flex;align-items:end;gap:22px;margin-bottom:36px}.controles>div:not(.nota-controle){min-width:205px}label{display:block;margin-bottom:7px}select{width:100%;background:var(--painel-2);border:1px solid #30445a;color:var(--texto);padding:11px 12px;border-radius:6px;font-size:13px}.nota-controle{color:var(--mudo);font-size:12px;padding:11px 0}.titulo-secao{display:flex;justify-content:space-between;align-items:end;margin:25px 0 15px}.titulo-secao h2{font-size:24px}.badge{color:var(--mudo);font-size:11px}.grade-cartoes{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.cartao{background:var(--painel);border:1px solid var(--borda);padding:18px;border-radius:10px}.cartao .rotulo{font-size:11px;color:var(--mudo)}.cartao .valor{font-size:25px;font-weight:700;margin:4px 0}.cartao .detalhe{font-size:11px;color:var(--azul)}.grade-graficos{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}.cabecalho-painel{display:flex;justify-content:space-between}.cabecalho-painel h3{font-size:15px}.cabecalho-painel p{font-size:11px;color:var(--mudo);margin:3px 0 0}.area-grafico{height:310px;margin-top:15px}.leitura{min-height:370px}.leitura p{font-size:13px;color:#c5d0dc;margin:18px 0}.leitura strong{color:var(--azul)}.secao-inferior{margin-top:42px}.chamada-pagina,.pagina-introducao{margin-top:35px}.chamada-pagina h2{font-size:21px;margin:5px 0}.chamada-pagina p,.pagina-introducao p{color:#c5d0dc;font-size:13px}.botao-principal{display:inline-block;margin-top:10px;padding:10px 15px;border-radius:6px;background:var(--azul);color:#07111d;text-decoration:none;font-size:12px;font-weight:700}.botao-principal:hover{background:#83ceff}.qualidade-grade{display:grid;grid-template-columns:1fr 1fr;gap:18px}.qualidade-bloco h4{margin:0 0 9px;color:var(--azul);font-size:13px}.qualidade-bloco p,.qualidade-bloco li{font-size:12px;color:#c5d0dc}.metodo{display:flex;justify-content:space-between;border-bottom:1px solid var(--borda);padding:7px 0;color:#c5d0dc;font-size:12px}.metodo b{color:var(--laranja)}.ferramentas-dicionario{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:16px;align-items:end;margin-top:20px}.ferramentas-dicionario input{width:100%;background:var(--painel-2);border:1px solid #30445a;color:var(--texto);padding:11px 12px;border-radius:6px;font-size:13px}.contador-filtros{color:var(--azul);font-size:12px;padding-bottom:11px;white-space:nowrap}.grade-dicionario-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}.card-categoria{background:linear-gradient(135deg,#172b3d,#121a25);border:1px solid var(--borda);border-radius:10px;padding:16px}.card-categoria span,.card-categoria small{display:block;color:var(--mudo);font-size:11px}.card-categoria strong{display:block;color:var(--azul);font-size:25px;margin:3px 0}.etiqueta-tipo,.etiqueta-categoria{display:inline-block;padding:4px 7px;border-radius:20px;background:#203449;color:#a8d9f9;font-size:10px}.etiqueta-categoria{background:#303044;color:#d0c8ff}.botao-detalhes{background:none;border:0;color:var(--azul);cursor:pointer;font-size:11px;padding:0}.detalhe-campo{display:none;color:var(--mudo);font-size:11px;line-height:1.7;margin-top:8px;max-width:460px}.linha-dicionario.aberto .detalhe-campo{display:block}.linha-dicionario.aberto{background:#152333}.estado-vazio{display:none;color:var(--mudo);text-align:center;padding:35px;font-size:13px}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--mudo);font-size:10px;letter-spacing:1px;text-transform:uppercase}td,th{padding:11px 10px;border-bottom:1px solid var(--borda)}td{color:#cbd6e1}footer{color:#536477;font-size:11px;padding:35px 0}@media(max-width:900px){.barra-lateral{position:static;width:auto;height:auto;display:block;padding:18px}.rotulo-menu,.rodape-menu{display:none}.item-menu{display:inline-block}.conteudo{margin:0;padding:25px 5%}.grade-cartoes,.grade-graficos,.qualidade-grade,.grade-dicionario-cards{grid-template-columns:1fr 1fr}.ferramentas-dicionario{grid-template-columns:1fr 1fr}.cabecalho{display:block}.status{display:inline-block;margin-top:15px}}@media(max-width:600px){.grade-cartoes,.grade-graficos,.qualidade-grade,.grade-dicionario-cards,.ferramentas-dicionario{grid-template-columns:1fr}.controles{display:block}.controles>div{margin-bottom:13px}.cabecalho h1{font-size:28px}}
+:root {
+  --fundo: #0b1018;
+  --painel: #121a25;
+  --painel-2: #172332;
+  --texto: #e9eef5;
+  --mudo: #8998aa;
+  --azul: #55b6ff;
+  --laranja: #ffad66;
+  --verde: #64d9a0;
+  --borda: #263546;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+.barra-lateral {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 238px;
+  background: #0d141e;
+  border-right: 1px solid var(--borda);
+  padding: 30px 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+
+.marca {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  color: var(--texto);
+  text-decoration: none;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+
+.marca strong,
+.marca small {
+  display: block;
+}
+
+.marca small {
+  color: var(--mudo);
+  font-size: 9px;
+  letter-spacing: 3px;
+  margin-top: 1px;
+}
+
+.marca-icone {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: var(--azul);
+  color: #07111d;
+  font-weight: 800;
+  font-size: 20px;
+}
+
+.rotulo-menu,
+.sobrelinha,
+label {
+  color: var(--mudo);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.7px;
+}
+
+.rotulo-menu {
+  margin: 62px 12px 12px;
+}
+
+.item-menu {
+  padding: 11px 12px;
+  margin: 2px 0;
+  color: var(--mudo);
+  text-decoration: none;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.item-menu:hover,
+.item-menu.ativo {
+  color: var(--texto);
+  background: #172536;
+}
+
+.item-menu.ativo {
+  border-left: 2px solid var(--azul);
+}
+
+.rodape-menu {
+  margin-top: auto;
+  color: #566578;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.conteudo {
+  width: calc(100% - 238px);
+  min-width: 0;
+  max-width: 1550px;
+  margin-left: 238px;
+  margin-right: auto;
+  padding: 40px 5.5%;
+}
+
+.cabecalho {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.cabecalho h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+.cabecalho h1 {
+  overflow-wrap: anywhere;
+  font-size: 35px;
+  letter-spacing: -1px;
+}
+
+.sobrelinha {
+  margin: 0 0 7px;
+}
+
+.subtitulo {
+  color: var(--mudo);
+  margin: 7px 0;
+}
+
+.status {
+  flex: 0 0 auto;
+  border: 1px solid #28503f;
+  color: var(--verde);
+  padding: 8px 13px;
+  border-radius: 20px;
+  font-size: 11px;
+}
+
+.status i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--verde);
+  border-radius: 50%;
+  margin-right: 7px;
+}
+
+.painel {
+  min-width: 0;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 22px;
+}
+
+.controles {
+  display: flex;
+  align-items: end;
+  gap: 22px;
+  margin-bottom: 36px;
+}
+
+.controles > div:not(.nota-controle) {
+  min-width: 205px;
+}
+
+label {
+  display: block;
+  margin-bottom: 7px;
+}
+
+select,
+.ferramentas-dicionario input {
+  width: 100%;
+  background: var(--painel-2);
+  border: 1px solid #30445a;
+  color: var(--texto);
+  padding: 11px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.nota-controle {
+  color: var(--mudo);
+  font-size: 12px;
+  padding: 11px 0;
+}
+
+.titulo-secao {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  margin: 25px 0 15px;
+}
+
+.titulo-secao h2 {
+  font-size: 24px;
+}
+
+.badge {
+  color: var(--mudo);
+  font-size: 11px;
+}
+
+.grade-cartoes,
+.grade-dicionario-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.grade-cartoes > *,
+.grade-graficos > *,
+.qualidade-grade > *,
+.grade-dicionario-cards > *,
+.ferramentas-dicionario > * {
+  min-width: 0;
+}
+
+.cartao,
+.card-categoria {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+}
+
+.cartao {
+  padding: 18px;
+  min-width: 0;
+}
+
+.cartao .rotulo,
+.card-categoria span,
+.card-categoria small {
+  color: var(--mudo);
+  font-size: 11px;
+}
+
+.cartao .valor {
+  overflow-wrap: anywhere;
+  font-size: 25px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.cartao .detalhe {
+  color: var(--azul);
+  font-size: 11px;
+}
+
+.grade-graficos {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.cabecalho-painel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cabecalho-painel h3 {
+  font-size: 15px;
+}
+
+.cabecalho-painel p {
+  color: var(--mudo);
+  font-size: 11px;
+  margin: 3px 0 0;
+}
+
+.area-grafico {
+  position: relative;
+  height: 310px;
+  margin-top: 15px;
+}
+
+.area-grafico canvas {
+  max-width: 100%;
+}
+
+.leitura {
+  min-height: 370px;
+}
+
+.leitura p {
+  color: #c5d0dc;
+  font-size: 13px;
+  margin: 18px 0;
+}
+
+.leitura strong {
+  color: var(--azul);
+}
+
+.secao-inferior {
+  margin-top: 42px;
+}
+
+.chamada-pagina,
+.pagina-introducao {
+  margin-top: 35px;
+}
+
+.chamada-pagina h2 {
+  font-size: 21px;
+  margin: 5px 0;
+}
+
+.chamada-pagina p,
+.pagina-introducao p {
+  color: #c5d0dc;
+  font-size: 13px;
+}
+
+.botao-principal {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 10px 15px;
+  border-radius: 6px;
+  background: var(--azul);
+  color: #07111d;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.botao-principal:hover {
+  background: #83ceff;
+}
+
+.qualidade-grade {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.qualidade-bloco h4 {
+  color: var(--azul);
+  font-size: 13px;
+  margin: 0 0 9px;
+}
+
+.qualidade-bloco p,
+.qualidade-bloco li {
+  color: #c5d0dc;
+  font-size: 12px;
+}
+
+.metodo {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--borda);
+  padding: 7px 0;
+  color: #c5d0dc;
+  font-size: 12px;
+}
+
+.metodo b {
+  color: var(--laranja);
+  white-space: nowrap;
+}
+
+.ferramentas-dicionario {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(145px, 1fr) minmax(145px, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  margin-top: 20px;
+}
+
+.contador-filtros {
+  color: var(--azul);
+  font-size: 12px;
+  padding-bottom: 11px;
+  white-space: nowrap;
+}
+
+.grade-dicionario-cards {
+  margin-top: 18px;
+}
+
+.card-categoria {
+  background: linear-gradient(135deg, #172b3d, #121a25);
+  padding: 16px;
+}
+
+.card-categoria strong {
+  display: block;
+  color: var(--azul);
+  font-size: 25px;
+  margin: 3px 0;
+}
+
+.etiqueta-tipo,
+.etiqueta-categoria {
+  display: inline-block;
+  padding: 4px 7px;
+  border-radius: 20px;
+  background: #203449;
+  color: #a8d9f9;
+  font-size: 10px;
+}
+
+.etiqueta-categoria {
+  background: #303044;
+  color: #d0c8ff;
+}
+
+.botao-detalhes {
+  background: none;
+  border: 0;
+  color: var(--azul);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+}
+
+.detalhe-campo {
+  display: none;
+  max-width: 460px;
+  color: var(--mudo);
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 8px;
+}
+
+.linha-dicionario.aberto .detalhe-campo {
+  display: block;
+}
+
+.linha-dicionario.aberto {
+  background: #152333;
+}
+
+.tabela-rolagem {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th {
+  text-align: left;
+  color: var(--mudo);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+td,
+th {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--borda);
+}
+
+td {
+  color: #cbd6e1;
+  overflow-wrap: anywhere;
+}
+
+.estado-vazio {
+  display: none;
+  color: var(--mudo);
+  text-align: center;
+  padding: 35px;
+  font-size: 13px;
+}
+
+footer {
+  color: #536477;
+  font-size: 11px;
+  padding: 35px 0;
+}
+
+@media (max-width: 1150px) and (min-width: 901px) {
+  .conteudo {
+    padding-right: 4%;
+    padding-left: 4%;
+  }
+
+  .controles {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .controles > div:not(.nota-controle) {
+    flex: 1 1 190px;
+  }
+
+  .nota-controle {
+    flex: 1 1 100%;
+  }
+
+  .ferramentas-dicionario {
+    grid-template-columns: minmax(0, 1.5fr) minmax(130px, 1fr);
+  }
+
+  .contador-filtros {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .barra-lateral {
+    position: static;
+    width: 100%;
+    height: auto;
+    display: block;
+    padding: 18px 5%;
+  }
+
+  .rotulo-menu,
+  .rodape-menu {
+    display: none;
+  }
+
+  .item-menu {
+    display: inline-block;
+    margin: 12px 4px 0 0;
+    padding: 9px 10px;
+    font-size: 12px;
+  }
+
+  .conteudo {
+    width: 100%;
+    margin-left: 0;
+    padding: 28px 5%;
+  }
+
+  .grade-cartoes,
+  .grade-graficos,
+  .qualidade-grade,
+  .grade-dicionario-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ferramentas-dicionario {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tabela-rolagem {
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 620px;
+  }
+
+  .contador-filtros {
+    padding-bottom: 0;
+  }
+
+  .cabecalho {
+    display: block;
+  }
+
+  .status {
+    display: inline-block;
+    margin-top: 15px;
+  }
+}
+
+@media (max-width: 600px) {
+  .barra-lateral {
+    padding: 16px;
+  }
+
+  .marca {
+    gap: 9px;
+  }
+
+  .item-menu {
+    margin-top: 10px;
+    font-size: 11px;
+  }
+
+  .conteudo {
+    padding: 24px 16px;
+  }
+
+  .cabecalho {
+    margin-bottom: 24px;
+  }
+
+  .cabecalho h1 {
+    font-size: clamp(26px, 8vw, 32px);
+    line-height: 1.15;
+  }
+
+  .subtitulo {
+    font-size: 13px;
+  }
+
+  .painel {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .controles {
+    display: block;
+    margin-bottom: 26px;
+  }
+
+  .controles > div,
+  .controles > div:not(.nota-controle) {
+    min-width: 0;
+    margin-bottom: 14px;
+  }
+
+  .nota-controle {
+    padding: 2px 0 0;
+  }
+
+  .titulo-secao {
+    display: block;
+    margin-top: 22px;
+  }
+
+  .badge {
+    display: block;
+    margin-top: 8px;
+  }
+
+  .grade-cartoes,
+  .grade-graficos,
+  .qualidade-grade,
+  .grade-dicionario-cards,
+  .ferramentas-dicionario {
+    grid-template-columns: 1fr;
+  }
+
+  .grade-graficos {
+    gap: 12px;
+  }
+
+  .area-grafico {
+    height: min(68vw, 270px);
+    min-height: 210px;
+  }
+
+  .leitura {
+    min-height: 0;
+  }
+
+  .chamada-pagina,
+  .pagina-introducao {
+    margin-top: 24px;
+  }
+
+  .chamada-pagina h2 {
+    font-size: 18px;
+  }
+
+  .ferramentas-dicionario {
+    gap: 12px;
+  }
+
+  .tabela-rolagem {
+    padding: 10px;
+    overflow: visible;
+  }
+
+  .tabela-rolagem table,
+  .tabela-rolagem tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .tabela-rolagem thead {
+    display: none;
+  }
+
+  .tabela-rolagem tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--borda);
+  }
+
+  .tabela-rolagem tr:last-child {
+    border-bottom: 0;
+  }
+
+  .tabela-rolagem td {
+    display: grid;
+    grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 7px 4px;
+    border-bottom: 0;
+    font-size: 12px;
+  }
+
+  .tabela-rolagem td::before {
+    content: attr(data-label);
+    color: var(--mudo);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+  }
+
+  .tabela-rolagem td:last-child {
+    display: block;
+    padding-top: 10px;
+  }
+
+  .tabela-rolagem td:last-child::before {
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .tabela-rolagem .detalhe-campo {
+    max-width: none;
+  }
+
+  .contador-filtros {
+    white-space: normal;
+  }
+
+  .metodo {
+    align-items: flex-start;
+    font-size: 11px;
+  }
+
+  footer {
+    padding: 26px 0;
+  }
+}
