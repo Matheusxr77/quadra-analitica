@@ -1,6 +1,17 @@
-# Quadra Analítica — Mavericks e Pacers
+# Quadra Analítica — Dallas Mavericks e Indiana Pacers
 
-Dashboard Flask para o Projeto 1 de Laboratório de Ciência de Dados. A aplicação apresenta as análises exigidas no enunciado diretamente no navegador: dicionário de dados, qualidade, medidas descritivas, IQR, CV, assimetria, comparações e visualizações interativas.
+Dashboard para o Projeto 1 de Laboratório de Ciência de Dados.
+
+## Linguagens e tecnologias
+
+- 🐍 **Python** — processamento dos dados, regras estatísticas e servidor da aplicação.
+- 🌐 **HTML5** — estrutura das páginas e componentes do dashboard.
+- 🎨 **CSS3** — identidade visual, layout responsivo e adaptação para celulares.
+- ⚡ **JavaScript** — filtros, chamadas à API e atualização dos gráficos sem recarregar a página.
+- 🧪 **Flask** — framework web e definição das rotas HTTP.
+- 🐼 **Pandas** — leitura, limpeza, normalização e análise dos dados.
+- 📊 **Chart.js** e **Chart.js Boxplot** — gráficos interativos de barras, histogramas e boxplots.
+- 🧰 **Pytest** — testes automatizados das páginas e da API.
 
 ## Arquitetura
 
@@ -8,13 +19,13 @@ A aplicação foi organizada para que uma alteração futura não precise atrave
 todo o sistema:
 
 ```text
-web/rotas.py                  HTTP, parâmetros e respostas JSON
-web/erros.py                  tratamento uniforme e sem vazamento de detalhes
-servicos/servico_relatorio.py casos de uso e validação das entradas
-infraestrutura/repositorio_dados.py leitura, tipagem, limpeza e cache da fonte
-infraestrutura/preparador_dados.py geração física do CSV exclusivo do grupo
-analise.py                    domínio estatístico puro sobre DataFrames
-configuracao.py               caminhos e limites da aplicação
+web/rotas.py                  # HTTP, parâmetros e respostas JSON
+web/erros.py                  # tratamento uniforme e sem vazamento de detalhes
+servicos/servico_relatorio.py # casos de uso e validação das entradas
+infraestrutura/repositorio_dados.py # leitura, tipagem, limpeza e cache da fonte
+infraestrutura/preparador_dados.py # geração física do CSV exclusivo do grupo
+analise.py                    # domínio estatístico puro sobre DataFrames
+configuracao.py               # caminhos e limites da aplicação
 ```
 
 O fluxo é unidirecional: rota → serviço → repositório/domínio. A rota não lê
@@ -41,13 +52,13 @@ apenas porque a fonte ainda não foi acessada.
 - O endpoint `/health` pode ser usado pelo Render ou por um monitor externo.
 
 Como o relatório é público e não possui dados pessoais ou operações de escrita,
-não foi adicionada autenticação artificial. Em uma futura área administrativa,
+não foi adicionada autenticação artificial. Caso seja necessária no futuro,
 ela deve ser criada como uma camada separada, com sessão, autorização e
 auditoria, sem misturar credenciais às rotas públicas.
 
 ## Executar localmente
 
-Requer Python 3.10 ou superior.
+Requer Python 3.10+.
 
 ```powershell
 python -m venv .venv
@@ -81,8 +92,6 @@ O arquivo [stats_times_regular_final.csv](./dados/stats_times_regular_final.csv)
 contém a liga inteira e é mantido em `dados/` como fonte bruta. Na
 inicialização do primeiro acesso aos dados, o sistema executa a etapa de
 preparação e gera `dados/estatisticas_times_selecionados.csv`.
-Essa base derivada é um artefato local e está no `.gitignore`: ela não precisa
-ser enviada ao GitHub, pois é recriada automaticamente a partir do CSV original.
 Esse arquivo possui somente os registros dos dois times atribuídos ao grupo e
 é a única base entregue ao cálculo estatístico. Ele contém 149 jogos no recorte
 atual (74 Mavericks e 75 Pacers). Se o CSV original for atualizado, a base
