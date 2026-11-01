@@ -107,12 +107,26 @@ tratamento recebeu antes da análise.
 
 ## Decisões estatísticas
 
-- Percentuais inconsistentes da origem (alguns em fração, outros em milésimos, como `506` para `0,506`) são convertidos para a faixa `[0, 1]` dividindo os valores acima de 1 por 1000.
 - Quartis usam interpolação linear do pandas em todas as tabelas e gráficos.
 - O desvio padrão e a variância são amostrais (`n - 1`), pois a temporada é tratada como observação de um processo de jogos futuros.
 - Outliers principais usam os limites de Tukey `Q1 - 1,5×IQR` e `Q3 + 1,5×IQR`; os demais métodos solicitados são apresentados como diagnóstico complementar.
 - A assimetria usa o coeficiente ajustado de Fisher-Pearson (`pandas.Series.skew`). A classificação adotada é: `|g1| < 0,5` aproximadamente simétrica; `0,5 ≤ |g1| < 1` moderada; `|g1| ≥ 1` forte.
 - O CV é `desvio padrão amostral / média × 100`. Ele é interpretado com cautela em métricas com média próxima de zero, como STL e BLK.
+- Assimetria, CV e IQR têm páginas próprias (`/assimetria`, `/cv`, `/iqr`) com fórmula, quadro-resumo variáveis × times e interpretação gerada a partir dos números (`interpretacao.py`).
+- O coeficiente de Bowley `(Q3 + Q1 − 2·Mediana)/IQR` é exibido como verificação robusta do sinal de G1; G1 também é recalculado sem os outliers para mostrar quando poucos jogos extremos explicam a assimetria.
+- Faixas do CV: `< 15%` consistente, `15–30%` moderada, `> 30%` irregular. Com média `< 10` por jogo o CV é lido com cautela e comparado ao piso de contagens tipo Poisson (`100/√média`); `IQR/Mediana × 100` é a alternativa robusta.
+- Tipos de dado no dicionário seguem o significado da coluna, não só o armazenamento: numérica (contagens e proporções), categórica (`TEAM_NAME`, `Team_ID`, `Game_ID`, que são rótulos mesmo guardados como inteiros), texto (`MATCHUP`), data (`GAME_DATE`) e binária (`WL`).
+- Colunas excluídas para aprendizado de máquina: `Team_ID`, `Game_ID` e `TEAM_NAME` (identificadores), `MATCHUP` (texto livre; o mando pode ser derivado) e `W`, `L`, `W_PCT` por **vazamento** — são acumulados registrados depois do jogo, e a variação de `W` é igual a `WL` em todos os jogos com jogo anterior (verificado na página). `WL` é o alvo.
+- Z-score no gráfico de barras (Comparativo): `z = (média do time − média dos 149 jogos dos dois times) / DP desses jogos`, para comparar as 7 variáveis num eixo comum. A referência é o próprio recorte, para não usar dados de outros times; por isso as barras dos dois times ficam quase espelhadas e o que se lê é a distância entre elas (Δz).
+- A página **Síntese** (`/sintese`, módulo `sintese.py`) reúne o quadro-resumo e a leitura final; diferenças entre os times são classificadas pela convenção de Cohen (`|Δz|` < 0,2 desprezível; < 0,5 pequena; < 0,8 média).
+- Qualidade (`/qualidade`, módulo `qualidade.py`): ausentes por coluna e duplicatas são medidos nas bases **brutas** (fonte completa e recorte do grupo), antes da tipagem e da deduplicação. A fonte atual não tem ausentes nem duplicatas, e nenhum percentual está fora de `[0, 1]`.
+- `MIN` é a soma dos minutos dos jogadores: o domínio é `240 + 25·k` (48 min × 5 no tempo normal, +5 min × 5 por prorrogação). Os valores 265 e 290 são uma e duas prorrogações, não erros.
+- Testes de mecanismo de ausência: como a base não tem ausentes, Little (EM sob normal multivariada) e a regressão logística de Fairclough (razão de verossimilhança) são demonstrados em cópias com ausência MCAR e MAR simuladas (semente 42). Jamshidian-Jalal e Listing-Schlittgen são apresentados em teoria.
+- Outliers (módulo `deteccao.py`, só numpy/scipy/scikit-learn — sem `pyod`): para cada uma das 7 variáveis e cada time, sete métodos com os jogos marcados (data e adversário) e tabela de concordância. Z-score `|z| > 3`; Tukey 1,5×IQR (mesmos limites do boxplot); Grubbs bilateral iterativo com `α = 0,05` e valor crítico pela distribuição t (confere com o exemplo do NIST e-Handbook); ECOD implementado conforme Li et al. (2022) — ECDF à esquerda e à direita, cauda escolhida pela assimetria e soma de −log; em uma dimensão é idêntico ao `pyod`, verificado em teste quando ele está instalado.
+- Parâmetros de K-NN, DBSCAN e LOF não são fixos à mão: cada limiar é **calibrado** para que, em dados normais com o mesmo n e dimensão, o método marque a mesma proporção que a regra de Tukey numa normal (P(|z| > 2,698) ≈ 0,70%). k = round(√n); `min_samples` = 4 (Ester et al.) ou 2·dimensão (Sander et al.); `n_neighbors` = 20 (Breunig et al.). Distâncias medidas em σ robusto (IQR/1,349). A calibração (Monte Carlo, semente fixa) fica em `dados/calibracao_outliers.json` para não pesar na primeira requisição; `python -m deteccao` a regenera e um teste confere que a tabela é reproduzível.
+- O ECOD univariado depende só do posto do valor, então o corte equivale a fixar uma proporção: usa-se a mesma taxa de referência (0,70%). Por isso ele marca no máximo o jogo mais extremo da coluna, e nenhum quando o mínimo e o máximo empatam na probabilidade de cauda.
+- Também há um resumo de Z-score, IQR, Grubbs e ECOD nas 18 colunas de box-score e uma seção multivariada (as 7 variáveis juntas) com os cortes calibrados em 7 dimensões.
+- O histograma usa faixas de Freedman–Diaconis (`h = 2·IQR·n^(−1/3)`, arredondado para inteiro porque as variáveis são contagens), comuns aos dois times. A curva de densidade é `scipy.stats.gaussian_kde` (banda de Scott), calculada no servidor e escalada por `n·h` para ficar na mesma unidade das barras (nº de jogos).
 
 ## Equipe
 - Matheus Marcos

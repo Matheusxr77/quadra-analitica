@@ -1,3 +1,5 @@
+"""Leitura, tipagem e cache da base usada na análise."""
+
 from pathlib import Path
 from threading import Lock
 
@@ -9,11 +11,8 @@ from infraestrutura.preparador_dados import gerar_base_dos_times
 
 
 
-"""Lê e prepara a base que será usada pela análise."""
-
-
 class RepositorioDados:
-    """Mantém os dados prontos em memória e entrega uma cópia para cada uso."""
+    """Carrega a base uma vez e entrega cópias."""
 
     colunas_obrigatorias = {
         "TEAM_NAME",
@@ -33,23 +32,40 @@ class RepositorioDados:
     ) -> None:
         self._caminho_origem = caminho
         self._caminho_selecionados = caminho_selecionados or (
-            caminho.parent / "dados" / "estatisticas_times_selecionados.csv"
+            caminho.parent / "estatisticas_times_selecionados.csv"
         )
         self._dados: pd.DataFrame | None = None
+        self._brutas: tuple[pd.DataFrame, pd.DataFrame] | None = None
         self._bloqueio = Lock()
 
     def obter_dados(self) -> pd.DataFrame:
-        """Prepara os dados no primeiro uso e devolve uma cópia segura."""
+        """Base tratada (carregada no primeiro uso)."""
         if self._dados is None:
             with self._bloqueio:
                 if self._dados is None:
                     self._dados = self._carregar()
         return self._dados.copy(deep=True)
 
+    def obter_bases_brutas(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Fonte completa e recorte do grupo sem tratamento, para medir duplicatas e ausentes."""
+        self.obter_dados()  # gera o recorte, se ainda não existir
+        with self._bloqueio:
+            if self._brutas is None:
+                try:
+                    self._brutas = (
+                        pd.read_csv(self._caminho_origem),
+                        pd.read_csv(self._caminho_selecionados),
+                    )
+                except (OSError, pd.errors.ParserError) as erro:
+                    raise ErroDados("Não foi possível ler as bases brutas.") from erro
+            fonte, recorte = self._brutas
+        return fonte.copy(deep=True), recorte.copy(deep=True)
+
     def recarregar(self) -> None:
-        """Lê novamente a fonte, regenera a base filtrada e atualiza o cache."""
+        """Relê a fonte, regenera o recorte e limpa os caches."""
         with self._bloqueio:
             self._dados = self._carregar()
+            self._brutas = None
 
     def _carregar(self) -> pd.DataFrame:
         gerar_base_dos_times(

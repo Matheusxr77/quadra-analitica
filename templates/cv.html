@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Coeficiente de variação{% endblock %}
+{% block bibliotecas %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">ESTATÍSTICA DESCRITIVA · DISPERSÃO RELATIVA</p><h1>Coeficiente de variação (CV)</h1><p class="subtitulo">Regularidade de cada time de um jogo para outro, comparável entre variáveis de escalas diferentes.</p></div><div class="status"><i></i> Calculado no servidor</div></header>
+
+<section class="painel bloco-formula" data-pagina-medida="cv">
+  <p class="sobrelinha">FÓRMULA UTILIZADA</p>
+  <div class="formula">CV = <span class="fracao"><span>s</span><span>x̄</span></span> × 100, &nbsp; s = <span class="raiz">√<span class="fracao"><span>Σ (x<sub>i</sub> − x̄)<sup>2</sup></span><span>n − 1</span></span></span></div>
+  <div class="formula formula-secundaria">Alternativa robusta: CV<sub>IQR</sub> = <span class="fracao"><span>Q<sub>3</sub> − Q<sub>1</sub></span><span>Mediana</span></span> × 100 &nbsp;·&nbsp; Piso de contagem (Poisson): 100 / √x̄</div>
+  <ul class="convencoes"><li>Desvio padrão <strong>amostral</strong> (n − 1), igual ao da tabela descritiva.</li><li>Resultado em <strong>percentual</strong> (%), 2 casas decimais.</li><li>Faixas: &lt; 15% consistente · 15–30% moderada · &gt; 30% irregular. Média &lt; 10 por jogo: ler com cautela.</li></ul>
+</section>
+
+<section class="grade-graficos">
+  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">QUADRO-RESUMO</p><h3>CV (%) por variável × time</h3><p>Linhas = variáveis, colunas = times</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="quadro-medida"></table></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><h3>CV por variável e time</h3><p>Marcador = piso esperado só pela escala da contagem</p></div></div><div class="area-grafico"><canvas id="grafico-medida"></canvas></div></article>
+</section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">DETALHE</p><h3>Validade, classificação e alternativa robusta</h3><p>Média e DP na unidade da variável; CV, piso e CV<sub>IQR</sub> em %</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="detalhe-medida"></table></div></section>
+
+<section class="painel secao-inferior leitura"><div class="cabecalho-painel"><div><p class="sobrelinha">INTERPRETAÇÃO</p><h3>Análise crítica gerada a partir dos números</h3></div></div><div id="interpretacao-medida" class="interpretacao-secoes"></div></section>
+{% endblock %}

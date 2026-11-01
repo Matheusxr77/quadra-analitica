@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Assimetria{% endblock %}
+{% block bibliotecas %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script><script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.2.0/build/index.umd.min.js"></script>{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">ESTATÍSTICA DESCRITIVA · FORMA</p><h1>Assimetria (skewness)</h1><p class="subtitulo">Coeficiente, direção e intensidade para cada variável e cada time, confirmados com histograma + KDE e boxplot.</p></div><div class="status"><i></i> Calculado no servidor</div></header>
+
+<section class="painel bloco-formula" data-pagina-medida="assimetria">
+  <p class="sobrelinha">FÓRMULA UTILIZADA</p>
+  <div class="formula">G<sub>1</sub> = <span class="fracao"><span>√(n(n − 1))</span><span>n − 2</span></span> · g<sub>1</sub>, &nbsp; g<sub>1</sub> = <span class="fracao"><span>m<sub>3</sub></span><span>m<sub>2</sub><sup>3/2</sup></span></span>, &nbsp; m<sub>k</sub> = <span class="fracao"><span>1</span><span>n</span></span> Σ (x<sub>i</sub> − x̄)<sup>k</sup></div>
+  <div class="formula formula-secundaria">Verificação robusta (Bowley): B = <span class="fracao"><span>Q<sub>3</sub> + Q<sub>1</sub> − 2·Md</span><span>Q<sub>3</sub> − Q<sub>1</sub></span></span></div>
+  <ul class="convencoes"><li>Coeficiente ajustado de Fisher-Pearson (pandas <code>Series.skew</code> = <code>scipy.stats.skew(bias=False)</code>).</li><li>Direção pelo sinal: G<sub>1</sub> &gt; 0 à direita (positiva); G<sub>1</sub> &lt; 0 à esquerda (negativa).</li><li>Intensidade: |G<sub>1</sub>| &lt; 0,5 aproximadamente simétrica; 0,5 ≤ |G<sub>1</sub>| &lt; 1 moderada; |G<sub>1</sub>| ≥ 1 forte.</li></ul>
+</section>
+
+<section class="grade-graficos">
+  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">QUADRO-RESUMO</p><h3>G<sub>1</sub> por variável × time</h3><p>Coeficiente adimensional, 2 casas decimais</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="quadro-medida"></table></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><h3>Comparação visual do coeficiente</h3><p>Faixas de referência ±0,5 (moderada) e ±1 (forte)</p></div></div><div class="area-grafico"><canvas id="grafico-medida"></canvas></div></article>
+</section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">DETALHE</p><h3>Direção, intensidade e verificações</h3><p>Bowley e média − mediana conferem o sinal; G<sub>1</sub> sem outliers mostra o peso dos jogos extremos</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="detalhe-medida"></table></div></section>
+
+<section class="controles painel secao-inferior"><div><label for="seletor-time">TIME</label><select id="seletor-time"><option>Todos</option>{% for time in times %}<option>{{ time }}</option>{% endfor %}</select></div><div><label for="seletor-variavel">MÉTRICA DE JOGO</label><select id="seletor-variavel">{% for variavel in variaveis %}<option>{{ variavel }}</option>{% endfor %}</select></div><div class="nota-controle">Confirmação visual da assimetria da métrica: <strong id="titulo-metrica">Pontos</strong></div></section>
+<section class="grade-graficos">
+  <article class="painel"><div class="cabecalho-painel"><div><h3>Histograma com curva KDE</h3><p>Faixas por Freedman–Diaconis; KDE gaussiana (scipy, banda de Scott) calculada no servidor</p></div></div><div class="area-grafico"><canvas id="grafico-histograma"></canvas></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><h3>Boxplot</h3><p>Mediana deslocada para Q1 e bigode superior longo indicam assimetria positiva</p></div></div><div class="area-grafico"><canvas id="grafico-boxplot"></canvas></div></article>
+</section>
+
+<section class="painel secao-inferior leitura"><div class="cabecalho-painel"><div><p class="sobrelinha">INTERPRETAÇÃO</p><h3>Análise crítica gerada a partir dos números</h3></div></div><div id="interpretacao-medida" class="interpretacao-secoes"></div></section>
+{% endblock %}

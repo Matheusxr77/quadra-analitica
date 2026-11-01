@@ -1,4 +1,4 @@
-"""Endereços acessados pelo navegador e pelas requisições da página."""
+"""Rotas das páginas e da API."""
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -52,6 +52,51 @@ def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
     @rotas.get("/api/qualidade")
     def api_qualidade():
         return jsonify(servico.qualidade())
+
+    @rotas.get("/assimetria")
+    def pagina_assimetria():
+        return render_template(
+            "assimetria.html",
+            times=TIMES_ANALISADOS,
+            variaveis=VARIAVEIS_ANALISADAS,
+            pagina_ativa="assimetria",
+        )
+
+    @rotas.get("/cv")
+    def pagina_cv():
+        return render_template("cv.html", pagina_ativa="cv")
+
+    @rotas.get("/iqr")
+    def pagina_iqr():
+        return render_template("iqr.html", pagina_ativa="iqr")
+
+    @rotas.get("/api/assimetria")
+    def api_assimetria():
+        return jsonify(servico.assimetria())
+
+    @rotas.get("/api/cv")
+    def api_cv():
+        return jsonify(servico.cv())
+
+    @rotas.get("/api/iqr")
+    def api_iqr():
+        return jsonify(servico.iqr())
+
+    @rotas.get("/sintese")
+    def pagina_sintese():
+        return render_template("sintese.html", pagina_ativa="sintese")
+
+    @rotas.get("/api/sintese")
+    def api_sintese():
+        return jsonify(servico.sintese())
+
+    @rotas.get("/api/perfil-z")
+    def api_perfil_z():
+        return jsonify(servico.perfil_z())
+
+    @rotas.get("/api/descritivas")
+    def api_descritivas():
+        return jsonify(servico.tabela_descritiva())
 
     @rotas.get("/api/estatisticas")
     def api_estatisticas():

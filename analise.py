@@ -1,17 +1,12 @@
-"""Funções que organizam os dados e calculam as estatísticas do dashboard.
+"""Cálculos estatísticos do relatório (domínio puro, sem Flask)."""
 
-Este arquivo não depende das páginas. Assim, os cálculos podem ser testados e
-alterados sem misturar estatística com HTML ou JavaScript.
-"""
-
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 
 CAMINHO_DADOS = (
     Path(__file__).parent / "dados" / "stats_times_regular_final.csv"
@@ -58,6 +53,16 @@ MAPA_VARIAVEIS = {
     "FG3M": "FG3M",
 }
 
+UNIDADES = {
+    "Pontos": "pontos por jogo",
+    "Rebotes": "rebotes por jogo",
+    "Assistências": "assistências por jogo",
+    "STL": "roubos de bola por jogo",
+    "BLK": "tocos por jogo",
+    "PF": "faltas por jogo",
+    "FG3M": "cestas de 3 por jogo",
+}
+
 METADADOS_CAMPOS = {
     "PTS": ("Desempenho", "Pontos marcados no jogo.", "Variável principal de pontuação."),
     "REB": ("Desempenho", "Rebotes totais no jogo.", "Combina rebotes ofensivos e defensivos."),
@@ -74,12 +79,8 @@ METADADOS_CAMPOS = {
 
 
 def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
-    """Converte percentuais misturados em fração, preservando a proporção.
-
-    A fonte contém valores como 0.39 e 506 para 39%. Valores acima de 1
-    estão em milésimos de proporção; dividir por 1000 os coloca na
-    mesma escala sem alterar a informação. Valores impossíveis são marcados
-    como ausentes para não contaminar os resumos.
+    """Percentuais em fração: valores > 1 (milésimos) são divididos por 1000; o que ficar fora de [0, 1] vira
+    ausente.
     """
     serie = pd.to_numeric(coluna, errors="coerce")
     serie = serie.where(serie <= 1, serie / 1000)
@@ -87,7 +88,7 @@ def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
 
 
 def carregar_dados() -> pd.DataFrame:
-    """Carrega os dados usando o mesmo caminho adotado pela aplicação."""
+    """Carrega a base tratada pelo caminho padrão."""
     from infraestrutura.repositorio_dados import RepositorioDados
 
     return RepositorioDados(CAMINHO_DADOS).obter_dados()
@@ -98,38 +99,72 @@ def _valores(dados: pd.DataFrame, time: str, variavel: str) -> pd.Series:
     return filtrados[MAPA_VARIAVEIS[variavel]].dropna().astype(float)
 
 
+LIMITE_SIMETRIA = 0.5
+LIMITE_ASSIMETRIA_FORTE = 1.0
+FAIXAS_CV = (15.0, 30.0)  # % — abaixo: consistente; entre: moderada; acima: irregular
+MEDIA_MINIMA_CV = 10.0  # abaixo disso (contagens pequenas) o CV é lido com cautela
+CONSTANTE_SIGMA_ROBUSTO = 1.349  # IQR de uma normal = 1,349 σ
+
+
+def _intensidade_assimetria(valor: float) -> str:
+    if abs(valor) < LIMITE_SIMETRIA:
+        return "aproximadamente simétrica"
+    return "moderada" if abs(valor) < LIMITE_ASSIMETRIA_FORTE else "forte"
+
+
+def _direcao_assimetria(valor: float) -> str:
+    """Direção pelo sinal do coeficiente."""
+    if valor > 0:
+        return "à direita (positiva)"
+    if valor < 0:
+        return "à esquerda (negativa)"
+    return "simétrica"
+
+
 def _classificar_assimetria(valor: float) -> str:
-    intensidade = "aproximadamente simétrica" if abs(valor) < 0.5 else (
-        "moderada" if abs(valor) < 1 else "forte"
-    )
-    direcao = "simétrica" if abs(valor) < 0.05 else (
-        "à direita (positiva)" if valor > 0 else "à esquerda (negativa)"
-    )
-    return f"{intensidade}; distribuição {direcao}"
+    return f"{_intensidade_assimetria(valor)}; distribuição {_direcao_assimetria(valor)}"
+
+
+def _skew(serie: pd.Series) -> float:
+    """Coeficiente ajustado de Fisher-Pearson (G1), igual a pandas.Series.skew."""
+    return float(serie.skew()) if len(serie) > 2 else 0.0
 
 
 def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
-    """Calcula as medidas estatísticas de uma variável.
-
-    O desvio padrão usa n - 1 porque os jogos observados representam uma
-    amostra do comportamento que pode ocorrer em outras partidas.
-    """
+    """Medidas descritivas de uma série; DP e variância amostrais (n − 1)."""
     quartil_1 = float(serie.quantile(0.25, interpolation="linear"))
     quartil_3 = float(serie.quantile(0.75, interpolation="linear"))
     media = float(serie.mean())
     desvio = float(serie.std(ddof=1))
-    moda = serie.mode()
-    valor_moda = float(moda.iloc[0]) if not moda.empty else None
-    assimetria = float(serie.skew()) if len(serie) > 2 else 0.0
+    contagens = serie.value_counts()
+    # Sem valores repetidos: amodal.
+    amodal = contagens.empty or int(contagens.max()) == 1
+    modas = [] if amodal else sorted(
+        float(valor) for valor in contagens[contagens == contagens.max()].index
+    )
+    valor_moda = modas[0] if modas else None
+    assimetria = _skew(serie)
     limite_inferior = quartil_1 - 1.5 * (quartil_3 - quartil_1)
     limite_superior = quartil_3 + 1.5 * (quartil_3 - quartil_1)
-    valores_atipicos = serie[(serie < limite_inferior) | (serie > limite_superior)]
+    mascara_atipicos = (serie < limite_inferior) | (serie > limite_superior)
+    valores_atipicos = serie[mascara_atipicos].sort_values()
+    # Bigodes: valor observado mais extremo dentro dos limites de Tukey.
+    dentro = serie[~mascara_atipicos]
     cv = desvio / media if media > 0 else None
+    iqr = quartil_3 - quartil_1
+    mediana = float(serie.median())
+    q1_sem = float(dentro.quantile(0.25, interpolation="linear"))
+    q3_sem = float(dentro.quantile(0.75, interpolation="linear"))
+    desvio_sem = float(dentro.std(ddof=1))
+    sigma_robusto = iqr / CONSTANTE_SIGMA_ROBUSTO
+    extremos_3iqr = serie[(serie < quartil_1 - 3 * iqr) | (serie > quartil_3 + 3 * iqr)]
     return {
         "n": int(serie.size),
         "media": media,
         "mediana": float(serie.median()),
         "moda": valor_moda,
+        "modas": modas,
+        "amodal": amodal,
         "minimo": float(serie.min()),
         "maximo": float(serie.max()),
         "amplitude": float(serie.max() - serie.min()),
@@ -140,12 +175,178 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
         "iqr": quartil_3 - quartil_1,
         "limite_inferior": limite_inferior,
         "limite_superior": limite_superior,
+        "bigode_inferior": float(dentro.min()),
+        "bigode_superior": float(dentro.max()),
         "outliers": [float(valor) for valor in valores_atipicos],
         "quantidade_outliers": int(valores_atipicos.size),
         "assimetria": assimetria,
         "classificacao_assimetria": _classificar_assimetria(assimetria),
+        "direcao_assimetria": _direcao_assimetria(assimetria),
+        "intensidade_assimetria": _intensidade_assimetria(assimetria),
+        # Bowley (quartis): verificação robusta, não depende das caudas.
+        "bowley": (quartil_3 + quartil_1 - 2 * mediana) / iqr if iqr > 0 else None,
+        "assimetria_sem_outliers": _skew(dentro),
         "cv": cv,
         "cv_percentual": cv * 100 if cv is not None else None,
+        "cv_robusto_iqr": iqr / mediana * 100 if mediana > 0 else None,
+        # Em contagens tipo Poisson, DP ≈ √média ⇒ CV ≈ 100/√média: piso esperado.
+        "cv_poisson_ref": 100 / np.sqrt(media) if media > 0 else None,
+        "desvio_sem_outliers": desvio_sem,
+        "iqr_sem_outliers": q3_sem - q1_sem,
+        "sigma_robusto": sigma_robusto,
+        "razao_dp_sigma_robusto": desvio / sigma_robusto if sigma_robusto > 0 else None,
+        "razao_amplitude_iqr": float(serie.max() - serie.min()) / iqr if iqr > 0 else None,
+        "limite_inferior_3iqr": quartil_1 - 3 * iqr,
+        "limite_superior_3iqr": quartil_3 + 3 * iqr,
+        "quantidade_outliers_3iqr": int(extremos_3iqr.size),
+    }
+
+
+def _detalhar_outliers(
+    dados: pd.DataFrame, serie: pd.Series, outliers_idx: pd.Index
+) -> list[dict[str, Any]]:
+    """Valor, data, adversário e prorrogações de cada outlier."""
+    detalhes = []
+    for indice in outliers_idx:
+        linha = dados.loc[indice]
+        data = linha.get("GAME_DATE")
+        confronto = str(linha.get("MATCHUP", "")) or None
+        minutos = linha.get("MIN")
+        prorrogacoes = (
+            int((float(minutos) - 240) // 25) if pd.notna(minutos) and float(minutos) > 240 else 0
+        )
+        detalhes.append({
+            "valor": float(serie.loc[indice]),
+            "data": data.strftime("%d/%m/%Y") if pd.notna(data) else None,
+            "confronto": confronto,
+            "adversario": confronto.replace(" vs. ", " @ ").split(" @ ")[-1].strip() if confronto else None,
+            "minutos": int(minutos) if pd.notna(minutos) else None,
+            "prorrogacoes": prorrogacoes,
+        })
+    return detalhes
+
+
+def erro_padrao_g1(n: int) -> float:
+    """Erro-padrão do G1 sob normalidade: √(6n(n−1) / ((n−2)(n+1)(n+3)))."""
+    return float(np.sqrt(6 * n * (n - 1) / ((n - 2) * (n + 1) * (n + 3)))) if n > 3 else float("nan")
+
+
+@lru_cache(maxsize=8)
+def referencia_amplitude_iqr(n: int) -> dict[str, float]:
+    """Mediana e percentil 95 de amplitude/IQR em amostras normais de tamanho n (simulação, semente fixa)."""
+    amostras = np.random.default_rng(1000 + n).standard_normal((4000, n))
+    q1, q3 = np.quantile(amostras, [0.25, 0.75], axis=1)
+    razao = (amostras.max(axis=1) - amostras.min(axis=1)) / (q3 - q1)
+    return {"mediana": float(np.median(razao)), "p95": float(np.quantile(razao, 0.95))}
+
+
+REAMOSTRAGENS_BOOTSTRAP = 2000
+
+
+def _cv_amostral(matriz: np.ndarray) -> np.ndarray:
+    return matriz.std(axis=1, ddof=1) / matriz.mean(axis=1) * 100
+
+
+def _iqr_linhas(matriz: np.ndarray) -> np.ndarray:
+    q1, q3 = np.quantile(matriz, [0.25, 0.75], axis=1)
+    return q3 - q1
+
+
+@lru_cache(maxsize=32)
+def _comparar_times_cache(chave: tuple) -> dict[str, Any]:
+    variavel, valores_a, valores_b = chave
+    a, b = np.array(valores_a), np.array(valores_b)
+    gerador = np.random.default_rng(2024)
+    reamostra_a = a[gerador.integers(0, len(a), (REAMOSTRAGENS_BOOTSTRAP, len(a)))]
+    reamostra_b = b[gerador.integers(0, len(b), (REAMOSTRAGENS_BOOTSTRAP, len(b)))]
+    resultado = {}
+    for nome, funcao in (("cv", _cv_amostral), ("iqr", _iqr_linhas)):
+        observada = float(funcao(a[None, :])[0] - funcao(b[None, :])[0])
+        diferencas = funcao(reamostra_a) - funcao(reamostra_b)
+        baixo, alto = (float(v) for v in np.quantile(diferencas, [0.025, 0.975]))
+        resultado[nome] = {
+            "diferenca": observada,
+            "ic95": [baixo, alto],
+            "relevante": bool(baixo > 0 or alto < 0),
+        }
+    return resultado
+
+
+def comparar_times(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
+    """Diferença (A − B) de CV e IQR com IC 95% por bootstrap; relevante se o IC não contém zero."""
+    a, b = (tuple(_valores(dados, time, variavel).tolist()) for time in TIMES_ANALISADOS)
+    return {"times": TIMES_ANALISADOS, **_comparar_times_cache((variavel, a, b))}
+
+
+def _estatisticas_com_jogos(
+    dados: pd.DataFrame, time: str, variavel: str
+) -> dict[str, Any]:
+    serie = _valores(dados, time, variavel)
+    resultado = _estatisticas_de_serie(serie)
+    atipicos = serie[
+        (serie < resultado["limite_inferior"]) | (serie > resultado["limite_superior"])
+    ].sort_values()
+    resultado["outliers_detalhe"] = _detalhar_outliers(dados, serie, atipicos.index)
+    resultado["valores"] = _serie_para_grafico(serie)
+    return resultado
+
+
+def calcular_tabela_descritiva(dados: pd.DataFrame) -> dict[str, Any]:
+    """Medidas descritivas de cada variável × time."""
+    variaveis = []
+    for variavel in VARIAVEIS_ANALISADAS:
+        times = {}
+        for time in TIMES_ANALISADOS:
+            estatisticas = _estatisticas_com_jogos(dados, time, variavel)
+            estatisticas.pop("valores")
+            times[time] = estatisticas
+        variaveis.append({
+            "variavel": variavel,
+            "unidade": UNIDADES[variavel],
+            "times": times,
+        })
+    return {"times": TIMES_ANALISADOS, "variaveis": variaveis}
+
+
+def _largura_freedman_diaconis(serie: pd.Series) -> int:
+    """h = 2·IQR·n^(−1/3), arredondado para inteiro ≥ 1 (as variáveis são contagens)."""
+    iqr = float(serie.quantile(0.75) - serie.quantile(0.25))
+    if iqr <= 0 or serie.size == 0:
+        return 1
+    return max(1, int(round(2 * iqr * serie.size ** (-1 / 3))))
+
+
+def calcular_histograma_kde(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
+    """Histograma com faixas comuns aos dois times e KDE (banda de Scott) escalada por n·h para a escala de
+    contagens.
+    """
+    conjunto = pd.concat([_valores(dados, time, variavel) for time in TIMES_ANALISADOS])
+    largura = _largura_freedman_diaconis(conjunto)
+    inicio = np.floor(conjunto.min()) - 0.5
+    fim = np.ceil(conjunto.max()) + 0.5
+    bordas = np.arange(inicio, fim + largura, largura)
+    bordas = bordas[: np.searchsorted(bordas, fim) + 1]
+    grade = np.linspace(inicio - largura, bordas[-1] + largura, 200)
+    por_time = {}
+    for time in TIMES_ANALISADOS:
+        serie = _valores(dados, time, variavel)
+        contagens, _ = np.histogram(serie, bins=bordas)
+        kde = stats.gaussian_kde(serie.to_numpy()) if serie.nunique() > 1 else None
+        densidade = kde(grade) if kde is not None else np.zeros_like(grade)
+        por_time[time] = {
+            "n": int(serie.size),
+            "contagens": [int(valor) for valor in contagens],
+            "kde_x": [float(valor) for valor in grade],
+            "kde_densidade": [float(valor) for valor in densidade],
+            "kde_frequencia": [float(valor) for valor in densidade * serie.size * largura],
+            "banda_kde": float(kde.factor * serie.std(ddof=1)) if kde is not None else None,
+        }
+    return {
+        "regra": "Freedman–Diaconis (h = 2·IQR·n^(−1/3), arredondado para inteiro)",
+        "largura": largura,
+        "bordas": [float(valor) for valor in bordas],
+        "centros": [float((a + b) / 2) for a, b in zip(bordas[:-1], bordas[1:])],
+        "times": por_time,
     }
 
 
@@ -156,113 +357,162 @@ def _serie_para_grafico(serie: pd.Series) -> list[float]:
 def calcular_estatisticas(
     dados: pd.DataFrame, time: str, variavel: str
 ) -> dict[str, Any]:
-    """Prepara os números que a página usa nos cartões e gráficos."""
+    """Dados dos cartões e gráficos de uma variável."""
     if variavel not in VARIAVEIS_ANALISADAS:
         variavel = VARIAVEIS_ANALISADAS[0]
     times = ["Todos"] if time == "Todos" else [time]
-    por_time = {}
-    for nome_time in times:
-        serie = _valores(dados, nome_time, variavel)
-        por_time[nome_time] = _estatisticas_de_serie(serie)
-        por_time[nome_time]["valores"] = _serie_para_grafico(serie)
-    comparativo = {}
-    for nome_time in TIMES_ANALISADOS:
-        serie = _valores(dados, nome_time, variavel)
-        comparativo[nome_time] = _estatisticas_de_serie(serie)
-        comparativo[nome_time]["valores"] = _serie_para_grafico(serie)
+    por_time = {
+        nome_time: _estatisticas_com_jogos(dados, nome_time, variavel)
+        for nome_time in times
+    }
+    comparativo = {
+        nome_time: _estatisticas_com_jogos(dados, nome_time, variavel)
+        for nome_time in TIMES_ANALISADOS
+    }
     return {
         "time": time,
         "variavel": variavel,
-        "unidade": "jogos",
+        "unidade": UNIDADES[variavel],
         "por_time": por_time,
         "comparativo": comparativo,
+        "histograma": calcular_histograma_kde(dados, variavel),
+    }
+
+
+TIPOS_DADOS = ["numérica", "categórica", "texto", "data", "binária"]
+COLUNAS_IDENTIFICADORAS = {"Team_ID", "Game_ID", "TEAM_NAME"}
+COLUNAS_ACUMULADAS = {"W", "L", "W_PCT"}
+COLUNA_ALVO = "WL"
+
+EXCLUSOES_ML = {
+    "Team_ID": "Identificador numérico do time: o número não mede desempenho, e o modelo decoraria códigos em vez de aprender padrões de jogo.",
+    "Game_ID": "Identificador da partida: único por jogo, não se repete em jogos futuros e não carrega informação estatística.",
+    "TEAM_NAME": "Nome do time (redundante com Team_ID): o modelo aprenderia 'quem joga' em vez de 'como jogou' e não generalizaria para outros times.",
+    "MATCHUP": "Texto livre ('DAL vs. LAC', 'DAL @ UTA'). Não entra cru em um modelo; o mando de quadra (vs. = casa, @ = fora) e o adversário podem ser extraídos como variáveis derivadas.",
+    "W": "Vazamento: vitórias acumuladas DEPOIS do jogo; a variação de W de um jogo para o seguinte é o próprio resultado (WL).",
+    "L": "Vazamento: derrotas acumuladas DEPOIS do jogo; W + L é o número do jogo e a variação de L revela a derrota.",
+    "W_PCT": "Vazamento: W ÷ (W + L) já incorpora o resultado do próprio jogo.",
+}
+
+
+def _classificar_tipo(coluna: str, serie: pd.Series) -> tuple[str, str]:
+    """Tipo pelo significado da coluna, não pelo dtype (ex.: Team_ID é inteiro, mas categórico)."""
+    if coluna == "GAME_DATE" or pd.api.types.is_datetime64_any_dtype(serie):
+        return "data", "data do jogo (datetime)"
+    if coluna == "MATCHUP":
+        return "texto", "texto livre com sigla, mando (vs./@) e adversário"
+    if coluna in COLUNAS_IDENTIFICADORAS:
+        return "categórica", "nominal (identificador)"
+    valores = set(serie.dropna().unique())
+    if valores and valores <= {0, 1}:
+        return "binária", "0 = derrota, 1 = vitória" if coluna == COLUNA_ALVO else "0/1"
+    if serie.dtype == "object":
+        return "categórica", "nominal"
+    if coluna in COLUNAS_ACUMULADAS:
+        sufixo = " (proporção 0–1)" if coluna.endswith("PCT") else " (contagem)"
+        return "numérica", "acumulado da temporada" + sufixo
+    if coluna.endswith("_PCT"):
+        return "numérica", "contínua (proporção 0–1)"
+    if coluna == "MIN":
+        return "numérica", "discreta (minutos do time: 240 + 25 por prorrogação)"
+    return "numérica", "discreta (contagem por jogo)"
+
+
+def verificar_vazamento_wl(dados: pd.DataFrame) -> dict[str, Any]:
+    """Confere se W e L são acumulados após o jogo, revelando WL."""
+    comparaveis = coincidem_w = coincidem_l = ordinal = total = 0
+    for _, grupo in dados.sort_values("GAME_DATE").groupby("TEAM_NAME"):
+        w = grupo["W"].astype(float)
+        l = grupo["L"].astype(float)
+        wl = grupo["WL"].astype(float)
+        diferenca_w, diferenca_l = w.diff(), l.diff()
+        validos = diferenca_w.notna()
+        comparaveis += int(validos.sum())
+        coincidem_w += int((diferenca_w[validos] == wl[validos]).sum())
+        coincidem_l += int((diferenca_l[validos] == 1 - wl[validos]).sum())
+        ordinal += int(((w + l).to_numpy() == np.arange(1, len(grupo) + 1)).sum())
+        total += len(grupo)
+    return {
+        "jogos": total,
+        "jogos_com_anterior": comparaveis,
+        "variacao_w_igual_wl": coincidem_w,
+        "variacao_l_igual_derrota": coincidem_l,
+        "w_mais_l_igual_numero_do_jogo": ordinal,
     }
 
 
 def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
-    """Descreve os campos da base depois do tratamento."""
+    """Descrição, tipo e uso em ML de cada campo da base tratada."""
+    padrao = ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
     linhas = []
     for coluna in dados.columns:
-        tipo = "data" if coluna == "GAME_DATE" else (
-            "categórica/texto" if dados[coluna].dtype == "object" else "numérica"
-        )
+        tipo, subtipo = _classificar_tipo(coluna, dados[coluna])
+        if coluna in EXCLUSOES_ML:
+            uso, justificativa = "excluída", EXCLUSOES_ML[coluna]
+        elif coluna == COLUNA_ALVO:
+            uso, justificativa = "alvo", "Resultado a prever (vitória/derrota); não entra como variável explicativa."
+        elif coluna == "GAME_DATE":
+            uso, justificativa = "feature", "Mantida para ordenar os jogos e derivar variáveis (dias de descanso, sequência), não como data crua."
+        else:
+            uso, justificativa = "feature", "Estatística do jogo, utilizável como variável explicativa."
+        categoria, explicacao, tratamento = METADADOS_CAMPOS.get(coluna, padrao)
         linhas.append({
             "coluna_original": coluna,
             "nome_apresentacao": NOMES_COLUNAS.get(coluna, coluna),
             "tipo": tipo,
+            "subtipo": subtipo,
+            "armazenamento": str(dados[coluna].dtype),
+            "uso_ml": uso,
+            "justificativa_ml": justificativa,
             "ausentes": int(dados[coluna].isna().sum()),
             "descricao": NOMES_COLUNAS.get(coluna, "Identificador técnico"),
-            "categoria": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[0],
-            "explicacao": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[1],
-            "tratamento": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[2],
+            "categoria": categoria,
+            "explicacao": explicacao,
+            "tratamento": tratamento,
         })
-    return {"linhas": int(len(dados)), "colunas": int(len(dados.columns)), "campos": linhas}
-
-
-def _contar_metodos_outlier(matriz: np.ndarray) -> dict[str, int]:
-    """Conta quantos jogos cada método considera atípicos.
-
-    Os métodos recebem as sete variáveis juntas. Antes disso, os valores são
-    padronizados para que Pontos não pese mais apenas por ter números maiores
-    que BLK ou STL.
-    """
-    if len(matriz) < 5:
-        return {metodo: 0 for metodo in ("Z-score", "Grubbs", "ECOD", "K-NN", "DBSCAN", "LOF")}
-    padronizada = (matriz - matriz.mean(axis=0)) / np.where(matriz.std(axis=0) == 0, 1, matriz.std(axis=0))
-    zscore = np.any(np.abs(padronizada) > 3, axis=1)
-    vizinhos = NearestNeighbors(n_neighbors=min(6, len(matriz))).fit(padronizada)
-    distancias, _ = vizinhos.kneighbors(padronizada)
-    knn = distancias[:, -1] > np.quantile(distancias[:, -1], 0.95)
-    dbscan = DBSCAN(eps=2.2, min_samples=5).fit_predict(padronizada) == -1
-    lof = LocalOutlierFactor(n_neighbors=min(20, len(matriz) - 1), contamination="auto")
-    lof_flags = lof.fit_predict(padronizada) == -1
-    ecod = np.zeros(len(matriz), dtype=bool)
-    for coluna in range(padronizada.shape[1]):
-        cauda = np.abs(stats.rankdata(padronizada[:, coluna]) / (len(matriz) + 1) - 0.5)
-        ecod |= cauda > np.quantile(cauda, 0.98)
-    # O Grubbs avalia uma variável por vez; aqui marcamos jogos com algum
-    # valor muito distante nas variáveis analisadas.
-    grubbs = np.any(np.abs(padronizada) > 2.8, axis=1)
+    mando = dados["MATCHUP"].astype(str)
     return {
-        "Z-score": int(zscore.sum()),
-        "Grubbs": int(grubbs.sum()),
-        "ECOD": int(ecod.sum()),
-        "K-NN": int(knn.sum()),
-        "DBSCAN": int(dbscan.sum()),
-        "LOF": int(lof_flags.sum()),
-    }
-
-
-def calcular_qualidade(dados: pd.DataFrame) -> dict[str, Any]:
-    campos_ausentes = [
-        {"campo": coluna, "quantidade": int(dados[coluna].isna().sum())}
-        for coluna in dados.columns
-    ]
-    matriz = dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]].dropna().to_numpy()
-    por_metodo = _contar_metodos_outlier(matriz)
-    return {
-        "duplicatas": int(dados.duplicated(subset=["TEAM_NAME", "Game_ID"]).sum()),
-        "campos_ausentes": campos_ausentes,
-        "inconsistencias": {
-            "datas_invalidas": int(dados["GAME_DATE"].isna().sum()),
-            "percentuais_fora_de_0_a_1": 0,
-            "valores_negativos_nas_variaveis": int(
-                (dados[[MAPA_VARIAVEIS[nome] for nome in VARIAVEIS_ANALISADAS]] < 0).sum().sum()
-            ),
-        },
-        "outliers_por_metodo": por_metodo,
-        "metodologia": [
-            "Z-score: sinaliza observações a mais de 3 desvios padrão.",
-            "IQR/boxplot: usa limites Q1 - 1,5×IQR e Q3 + 1,5×IQR; é o critério principal.",
-            "Grubbs: compara o extremo mais distante com a distribuição t; exige normalidade aproximada.",
-            "ECOD: identifica caudas empíricas sem assumir distribuição paramétrica.",
-            "K-NN, DBSCAN e LOF: detectam isolamento/densidade após padronização das sete variáveis.",
-            "Little, Jamshidian-Jalal, LS e Fairclough são testes para mecanismos de missing; com zero ausentes, não há hipótese de missing a testar.",
+        "linhas": int(len(dados)),
+        "colunas": int(len(dados.columns)),
+        "campos": linhas,
+        "tipos": {tipo: sum(1 for l in linhas if l["tipo"] == tipo) for tipo in TIPOS_DADOS},
+        "exclusoes": [
+            {"coluna": l["coluna_original"], "tipo": l["tipo"], "motivo": l["justificativa_ml"]}
+            for l in linhas if l["uso_ml"] == "excluída"
         ],
+        "vazamento": verificar_vazamento_wl(dados),
+        "mando": {
+            "casa": int(mando.str.contains(" vs. ", regex=False).sum()),
+            "fora": int(mando.str.contains(" @ ", regex=False).sum()),
+        },
+        "features": sum(1 for l in linhas if l["uso_ml"] == "feature"),
     }
+
+
+def calcular_perfil_z(dados: pd.DataFrame) -> dict[str, Any]:
+    """Média de cada time em z, com referência nos jogos dos dois times."""
+    variaveis = []
+    for variavel in VARIAVEIS_ANALISADAS:
+        coluna = MAPA_VARIAVEIS[variavel]
+        conjunto = dados.loc[dados["TEAM_NAME"].isin(TIMES_ANALISADOS), coluna].dropna()
+        media, desvio = float(conjunto.mean()), float(conjunto.std(ddof=1))
+        times = {}
+        for time in TIMES_ANALISADOS:
+            serie = _valores(dados, time, variavel)
+            media_time = float(serie.mean())
+            times[time] = {
+                "n": int(serie.size),
+                "media": media_time,
+                "z": (media_time - media) / desvio if desvio > 0 else 0.0,
+            }
+        a, b = TIMES_ANALISADOS
+        variaveis.append({
+            "variavel": variavel,
+            "unidade": UNIDADES[variavel],
+            "media_referencia": media,
+            "desvio_referencia": desvio,
+            "n_referencia": int(conjunto.size),
+            "times": times,
+            "diferenca_z": times[a]["z"] - times[b]["z"],
+        })
+    return {"times": TIMES_ANALISADOS, "referencia": "jogos dos dois times", "variaveis": variaveis}

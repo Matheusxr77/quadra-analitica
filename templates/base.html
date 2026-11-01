@@ -16,7 +16,11 @@
     <p class="rotulo-menu">RELATÓRIO</p>
     <a class="item-menu {% if pagina_ativa == 'visao_geral' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_principal') }}">Visão geral</a>
     <a class="item-menu {% if pagina_ativa == 'comparativo' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_comparativo') }}">Comparativo</a>
+    <a class="item-menu {% if pagina_ativa == 'assimetria' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_assimetria') }}">Assimetria</a>
+    <a class="item-menu {% if pagina_ativa == 'cv' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_cv') }}">Coeficiente de variação</a>
+    <a class="item-menu {% if pagina_ativa == 'iqr' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_iqr') }}">Intervalo interquartil</a>
     <a class="item-menu {% if pagina_ativa == 'qualidade' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_qualidade') }}">Qualidade dos dados</a>
+    <a class="item-menu {% if pagina_ativa == 'sintese' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_sintese') }}">Síntese</a>
     <a class="item-menu {% if pagina_ativa == 'dicionario' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_dicionario') }}">Dicionário de dados</a>
     <div class="rodape-menu">Laboratório de Ciência de Dados<br>Projeto 1 · 2026.2</div>
   </aside>

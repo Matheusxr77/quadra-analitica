@@ -1,4 +1,4 @@
-"""Define os caminhos e opções usados pela aplicação."""
+"""Caminhos e limites da aplicação."""
 
 import os
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Configuracao:
-    """Reúne as configurações usadas pela aplicação."""
+    """Configuração da aplicação."""
 
     caminho_dados: Path
     limite_requisicao: int
@@ -15,7 +15,7 @@ class Configuracao:
 
     @classmethod
     def a_partir_das_variaveis(cls) -> "Configuracao":
-        """Lê caminhos e limites definidos para a execução da aplicação."""
+        """Lê a configuração das variáveis de ambiente, com padrões."""
         return cls(
             caminho_dados=Path(
                 os.getenv(

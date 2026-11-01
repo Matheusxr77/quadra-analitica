@@ -1,3 +1,5 @@
+"""Gera o CSV só com os dois times do grupo."""
+
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -6,16 +8,11 @@ import pandas as pd
 from analise import TIMES_ANALISADOS
 from excecoes import ErroDados
 
-"""Cria um CSV separado somente com os dois times do grupo."""
-
 
 def gerar_base_dos_times(
     caminho_origem: Path, caminho_destino: Path
 ) -> Path:
-    """Seleciona os dois times do grupo e salva um CSV antes dos cálculos.
-
-    Assim, a análise nunca precisa consultar os registros dos outros times.
-    """
+    """Grava o CSV só com os dois times do grupo; a análise lê apenas esse arquivo."""
     if not caminho_origem.is_file():
         raise ErroDados("A fonte original dos dados não foi encontrada.")
     try:

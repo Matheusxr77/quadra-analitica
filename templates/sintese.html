@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Síntese{% endblock %}
+{% block conteudo %}
+<header class="cabecalho"><div><p class="sobrelinha">SÍNTESE E INTERPRETAÇÃO</p><h1>Síntese</h1><p class="subtitulo">O que os números dizem sobre Mavericks e Pacers, reunindo medidas descritivas, forma, dispersão, outliers e qualidade da base.</p></div><div class="status"><i></i> Gerada a partir dos números</div></header>
+
+<section class="painel" data-pagina-sintese><div class="cabecalho-painel"><div><p class="sobrelinha">QUADRO-SÍNTESE</p><h3>Principais medidas por variável e por time</h3><p>Valores por jogo, 2 casas decimais; CV em %; G1 = assimetria ajustada de Fisher-Pearson; outliers pela regra de Tukey (1,5×IQR); z = (média do time − média dos 149 jogos) ÷ DP dos 149 jogos</p></div></div>
+<div class="tabela-rolavel"><table class="tabela-medida" id="s-quadro"><tbody><tr><td>Carregando…</td></tr></tbody></table></div></section>
+
+<section class="painel secao-inferior leitura"><div class="cabecalho-painel"><div><p class="sobrelinha">INTERPRETAÇÃO</p><h3>Leitura final do relatório</h3></div></div><div id="interpretacao-sintese" class="interpretacao-secoes"></div></section>
+{% endblock %}
