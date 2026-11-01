@@ -1,0 +1,64 @@
+{
+  "descricao": "Limiares de K-NN, DBSCAN, LOF e ECOD calibrados sob normalidade (ver deteccao.py).",
+  "semente": 2024,
+  "repeticoes": 200,
+  "taxa_referencia": 0.006976603239280237,
+  "entradas": {
+    "74x1": {
+      "n": 74,
+      "dimensao": 1,
+      "taxa_referencia": 0.006976603239280237,
+      "repeticoes": 200,
+      "knn_k": 9,
+      "knn_corte": 1.5401245692825292,
+      "dbscan_min_samples": 4,
+      "dbscan_eps": 0.6958666992187499,
+      "lof_vizinhos": 20,
+      "lof_corte": 2.811610440801708,
+      "lof_taxa_regra_pratica": 0.10695945945945946,
+      "ecod_corte": 4.304065093204169
+    },
+    "74x7": {
+      "n": 74,
+      "dimensao": 7,
+      "taxa_referencia": 0.006976603239280237,
+      "repeticoes": 200,
+      "knn_k": 9,
+      "knn_corte": 4.008908240341011,
+      "dbscan_min_samples": 14,
+      "dbscan_eps": 3.178575357271898,
+      "lof_vizinhos": 20,
+      "lof_corte": 1.3847018012295387,
+      "lof_taxa_regra_pratica": 0.001418918918918919,
+      "ecod_corte": 14.931160140490912
+    },
+    "75x1": {
+      "n": 75,
+      "dimensao": 1,
+      "taxa_referencia": 0.006976603239280237,
+      "repeticoes": 200,
+      "knn_k": 9,
+      "knn_corte": 1.5134684097347364,
+      "dbscan_min_samples": 4,
+      "dbscan_eps": 0.7013507080078124,
+      "lof_vizinhos": 20,
+      "lof_corte": 2.8957240779529037,
+      "lof_taxa_regra_pratica": 0.1166,
+      "ecod_corte": 4.31748811353631
+    },
+    "75x7": {
+      "n": 75,
+      "dimensao": 7,
+      "taxa_referencia": 0.006976603239280237,
+      "repeticoes": 200,
+      "knn_k": 9,
+      "knn_corte": 3.940165667087286,
+      "dbscan_min_samples": 14,
+      "dbscan_eps": 3.170901403875744,
+      "lof_vizinhos": 20,
+      "lof_corte": 1.3995596343987975,
+      "lof_taxa_regra_pratica": 0.002,
+      "ecod_corte": 14.801360835429808
+    }
+  }
+}

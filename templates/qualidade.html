@@ -2,48 +2,56 @@
 {% block titulo %}Quadra Analítica | Qualidade{% endblock %}
 {% block bibliotecas %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>{% endblock %}
 {% block conteudo %}
-<header class="cabecalho"><div><p class="sobrelinha">CONFIABILIDADE</p><h1>Qualidade dos dados</h1><p class="subtitulo">Ausentes e seus mecanismos, valores especiais, domínio e detecção de outliers por coluna.</p></div><div class="status"><i></i> Diagnóstico calculado no servidor</div></header>
+<header class="cabecalho"><div><p class="sobrelinha">CONFIABILIDADE</p><h1>Qualidade dos dados</h1><p class="subtitulo">Valores especiais, ausentes e seus mecanismos, domínio e detecção de outliers por coluna.</p></div><div class="status"><i></i> Diagnóstico calculado no servidor</div></header>
 
 <section class="grade-cartoes" id="q-cartoes" data-pagina-qualidade></section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">1 · VALORES AUSENTES</p><h3>Ausentes por coluna</h3><p>Medidos antes de qualquer limpeza (fonte completa e recorte bruto do grupo) e depois da conversão de tipos</p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">1 · VALORES AUSENTES</p><h3>Ausentes por coluna</h3><p>Medidos antes de qualquer limpeza (fonte completa e recorte bruto dos dois times) e depois da conversão de tipos</p></div></div>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-ausentes"><tbody><tr><td>Carregando…</td></tr></tbody></table></div></section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">2 · MECANISMOS DE AUSÊNCIA</p><h3>MCAR, MAR e MNAR</h3><p>Por que um dado falta determina se excluir linhas é seguro ou gera viés</p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">2 · MECANISMOS DE AUSÊNCIA</p><h3>MCAR, MAR e MNAR</h3><p>Por que um dado falta determina se excluir linhas é seguro ou gera viés — com um exemplo de basquete para cada mecanismo</p></div></div>
 <div class="grade-tres" id="q-mecanismos"></div></section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">3 · TESTES DE MECANISMO</p><h3>Little, Jamshidian-Jalal, Listing-Schlittgen e regressão logística de Fairclough</h3><p>Como e por que usar cada teste e se ele se aplica à base real</p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">3 · TESTES DE MECANISMO</p><h3>Little, Jamshidian-Jalal, Listing-Schlittgen e regressão logística de Fairclough</h3><p>O que cada teste verifica, a hipótese nula, como se aplicaria e por que não foi aplicado à base real</p></div></div>
 <div class="grade-cartoes-texto" id="q-testes"></div>
-<h4 class="subtitulo-bloco">Demonstração com ausência simulada</h4>
+<h4 class="subtitulo-bloco">Exemplo didático com ausência simulada (não é a base real)</h4>
 <p class="nota-tabela" id="q-demo-nota"></p>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-demo"></table></div>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-demo-coef"></table></div></section>
 
 <section class="grade-graficos">
-  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">4 · DUPLICATAS</p><h3>Duplicatas na base bruta</h3><p>Contadas antes da deduplicação feita no tratamento</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="q-duplicatas"></table></div></article>
-  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">5 · ZEROS E NEGATIVOS</p><h3>Zeros e negativos por coluna</h3><p>Recorte bruto do grupo; só colunas com ocorrência são listadas</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="q-zeros"></table></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">4 · DUPLICATAS</p><h3>Duplicatas na base bruta</h3><p>Linha inteira e chave TEAM_NAME + Game_ID, contadas antes da deduplicação</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="q-duplicatas"></table></div></article>
+  <article class="painel"><div class="cabecalho-painel"><div><p class="sobrelinha">5 · ZEROS E NEGATIVOS</p><h3>Zeros e negativos por coluna</h3><p>Recorte bruto dos dois times; o significado diz se o zero é legítimo</p></div></div><div class="tabela-rolavel"><table class="tabela-medida" id="q-zeros"></table></div></article>
 </section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">6 · FORA DE DOMÍNIO</p><h3>Regras de domínio e coerência</h3><p>Violações na fonte completa e no recorte do grupo</p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">6 · FORA DE DOMÍNIO</p><h3>Valores fora de domínio por coluna</h3><p>Cada regra calculada na base bruta (fonte completa e recorte dos dois times), antes de qualquer correção</p></div></div>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-dominio"></table></div>
 <div class="grade-graficos">
   <div><h4 class="subtitulo-bloco">Valores de MIN (minutos do time)</h4><div class="tabela-rolavel"><table class="tabela-medida" id="q-minutos"></table></div></div>
   <div><h4 class="subtitulo-bloco">Jogos com prorrogação no recorte</h4><div class="tabela-rolavel"><table class="tabela-medida" id="q-prorrogacao"></table></div></div>
 </div></section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">7 · OUTLIERS POR COLUNA</p><h3>Z-score, IQR, Grubbs e ECOD em cada coluna de box-score, por time</h3><p id="q-parametros"></p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">7 · TEORIA DOS MÉTODOS DE OUTLIERS</p><h3>Como cada detector funciona e por que estes parâmetros</h3><p id="q-parametros"></p></div></div>
+<div class="grade-cartoes-texto" id="q-metodos"></div></section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">8 · OUTLIERS POR VARIÁVEL</p><h3>Quantos e quais jogos cada método marca — 7 variáveis × 2 times</h3><p>Cada célula: quantidade e os jogos (data, adversário e valor). Mesmos limites de Tukey do boxplot.</p></div></div>
+<div class="tabela-rolavel"><table class="tabela-medida" id="q-por-variavel"></table></div></section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">9 · CONCORDÂNCIA</p><h3>Concordância entre os métodos</h3><p>Por jogo: quais métodos o marcam. Matriz: em quantos pares (jogo, variável) cada dupla de métodos coincide; a diagonal é o total do método.</p></div></div>
+<div class="tabela-rolavel"><table class="tabela-medida" id="q-concordancia"></table></div>
+<h4 class="subtitulo-bloco">Matriz de concordância (método × método)</h4>
+<div class="tabela-rolavel"><table class="tabela-medida" id="q-matriz"></table></div></section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">10 · GRUBBS PASSO A PASSO</p><h3>Iterações do teste de Grubbs nas 7 variáveis analisadas</h3><p>A cada passo: o valor mais distante da média, G observado e G crítico; para no primeiro passo não significativo</p></div></div>
+<div class="tabela-rolavel"><table class="tabela-medida" id="q-grubbs"></table></div></section>
+
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">11 · RESUMO NAS 18 COLUNAS</p><h3>Z-score, IQR, Grubbs e ECOD em cada coluna de box-score, por time</h3><p>Para cobrir todas as colunas; o detalhe com os 7 métodos está na seção 8</p></div></div>
 <div class="area-grafico area-alta"><canvas id="grafico-outliers-coluna"></canvas></div>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-outliers"></table></div>
 <p class="nota-tabela">Linhas destacadas: as 7 variáveis analisadas no relatório. Valores na unidade da coluna (percentuais como fração), 2 casas decimais. Shapiro-Wilk p &lt; 0,05 indica que a premissa de normalidade do Z-score e do Grubbs não se sustenta.</p></section>
 
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">8 · GRUBBS PASSO A PASSO</p><h3>Iterações do teste de Grubbs nas 7 variáveis analisadas</h3><p>A cada passo: o valor mais distante da média, G observado e G crítico; para no primeiro passo não significativo</p></div></div>
-<div class="tabela-rolavel"><table class="tabela-medida" id="q-grubbs"></table></div></section>
-
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">9 · OUTLIERS MULTIVARIADOS</p><h3>ECOD, K-NN, DBSCAN e LOF sobre as 7 variáveis juntas</h3><p>Variáveis padronizadas (z) por time; cada linha é um jogo marcado</p></div></div>
+<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">12 · OUTLIERS MULTIVARIADOS</p><h3>ECOD, K-NN, DBSCAN e LOF sobre as 7 variáveis juntas</h3><p id="q-parametros-mv"></p></div></div>
 <div class="tabela-rolavel"><table class="tabela-medida" id="q-multivariados"></table></div></section>
-
-<section class="painel secao-inferior"><div class="cabecalho-painel"><div><p class="sobrelinha">10 · TEORIA DOS MÉTODOS</p><h3>Como cada detector de outliers funciona</h3><p>Fórmula, ideia, premissas e parâmetros usados</p></div></div>
-<div class="grade-cartoes-texto" id="q-metodos"></div></section>
 
 <section class="painel secao-inferior leitura"><div class="cabecalho-painel"><div><p class="sobrelinha">INTERPRETAÇÃO</p><h3>Leitura gerada a partir dos números</h3></div></div><div id="interpretacao-qualidade" class="interpretacao-secoes"></div></section>
 {% endblock %}

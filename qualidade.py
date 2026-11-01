@@ -6,27 +6,33 @@ para que duplicatas e ausentes sejam medidos antes do tratamento. Os textos
 são gerados a partir dos números calculados.
 """
 
-from math import sqrt
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 
 from analise import (
     MAPA_VARIAVEIS,
     NOMES_COLUNAS,
     TIMES_ANALISADOS,
+    UNIDADES,
     VARIAVEIS_ANALISADAS,
     _estatisticas_de_serie,
 )
+from deteccao import (
+    ALFA_GRUBBS,
+    LIMIAR_ZSCORE,
+    LOF_REGRA_PRATICA,
+    TAXA_REFERENCIA,
+    detectar,
+    ecod_por_proporcao,
+    grubbs_iterativo,
+    obter_calibracao,
+    valor_critico_grubbs,
+)
 from interpretacao import _curto, _n, _plural
 
-ALFA_GRUBBS = 0.05
-CONTAMINACAO_ECOD = 0.05
-LIMIAR_ZSCORE = 3.0
 ALFA_TESTES = 0.05
 SEMENTE_DEMONSTRACAO = 42
 MINUTOS_REGULAMENTARES = 240  # 48 min × 5 jogadores em quadra
@@ -48,6 +54,7 @@ SIGNIFICADO_ZEROS = {
     "W": "vitórias acumuladas antes da primeira vitória da temporada.",
     "L": "derrotas acumuladas antes da primeira derrota da temporada.",
     "W_PCT": "consequência direta de W = 0 (0 vitórias ÷ jogos disputados).",
+    "BLK": "jogo sem nenhum toco: incomum (média ≈ 5 por jogo), mas plenamente possível; não é ausência.",
 }
 SIGNIFICADO_ZERO_CONTAGEM = (
     "contagem legítima: o evento pode simplesmente não ocorrer em um jogo."
@@ -189,34 +196,34 @@ def _regras_dominio() -> list[tuple[str, str, Any]]:
         return regra
 
     regras = [
-        ("MIN = 240 + 25·k", "Minutos do time: 240 no tempo normal, +25 por prorrogação.",
+        ("MIN", "MIN = 240 + 25·k", "Minutos do time: 240 no tempo normal, +25 por prorrogação.",
          lambda b: _numerico(b, "MIN").map(classificar_minutos).isna()),
-        ("WL ∈ {0, 1}", "Resultado binário.",
+        ("WL", "WL ∈ {0, 1}", "Resultado binário.",
          lambda b: ~_numerico(b, "WL").isin([0, 1])),
-        ("GAME_DATE é data válida", "Data convertível para o tipo data.",
+        ("GAME_DATE", "GAME_DATE é data válida", "Data convertível para o tipo data.",
          lambda b: pd.to_datetime(b["GAME_DATE"], errors="coerce").isna()),
     ]
     regras += [
-        (f"{c} ∈ [0, 1]", "Percentual armazenado como fração.", pct(c))
+        (c, f"{c} ∈ [0, 1]", "Percentual armazenado como fração.", pct(c))
         for c in COLUNAS_PERCENTUAIS
     ]
     regras += [
-        ("FGM ≤ FGA", "Não se converte mais do que se tenta.", menor_igual("FGM", "FGA")),
-        ("FG3M ≤ FG3A", "Idem para três pontos.", menor_igual("FG3M", "FG3A")),
-        ("FTM ≤ FTA", "Idem para lances livres.", menor_igual("FTM", "FTA")),
-        ("FG3M ≤ FGM", "Cesta de três é uma cesta de quadra.", menor_igual("FG3M", "FGM")),
-        ("REB = OREB + DREB", "Rebotes totais = ofensivos + defensivos.",
+        ("FGM", "FGM ≤ FGA", "Não se converte mais do que se tenta.", menor_igual("FGM", "FGA")),
+        ("FG3M", "FG3M ≤ FG3A", "Idem para três pontos.", menor_igual("FG3M", "FG3A")),
+        ("FTM", "FTM ≤ FTA", "Idem para lances livres.", menor_igual("FTM", "FTA")),
+        ("FG3M", "FG3M ≤ FGM", "Cesta de três é uma cesta de quadra.", menor_igual("FG3M", "FGM")),
+        ("REB", "REB = OREB + DREB", "Rebotes totais = ofensivos + defensivos.",
          lambda b: _numerico(b, "REB") != _numerico(b, "OREB") + _numerico(b, "DREB")),
-        ("PTS = 2·FGM + FG3M + FTM", "Cada cesta vale 2, a de três vale 1 a mais e o lance livre 1.",
+        ("PTS", "PTS = 2·FGM + FG3M + FTM", "Cada cesta vale 2, a de três vale 1 a mais e o lance livre 1.",
          lambda b: _numerico(b, "PTS")
          != 2 * _numerico(b, "FGM") + _numerico(b, "FG3M") + _numerico(b, "FTM")),
-        ("FG_PCT = FGM/FGA (±0,001)", "Percentual coerente com as contagens.",
+        ("FG_PCT", "FG_PCT = FGM/FGA (±0,001)", "Percentual coerente com as contagens.",
          pct_coerente("FG_PCT", "FGM", "FGA")),
-        ("FG3_PCT = FG3M/FG3A (±0,001)", "Idem para três pontos.",
+        ("FG3_PCT", "FG3_PCT = FG3M/FG3A (±0,001)", "Idem para três pontos.",
          pct_coerente("FG3_PCT", "FG3M", "FG3A")),
-        ("FT_PCT = FTM/FTA (±0,001)", "Idem para lances livres.",
+        ("FT_PCT", "FT_PCT = FTM/FTA (±0,001)", "Idem para lances livres.",
          pct_coerente("FT_PCT", "FTM", "FTA")),
-        ("Sem negativos nas contagens", "Contagens de box-score não podem ser negativas.",
+        ("contagens", "Sem negativos nas contagens", "Contagens de box-score não podem ser negativas.",
          lambda b: (b[[c for c in COLUNAS_BOX_SCORE if c in b]].apply(pd.to_numeric, errors="coerce") < 0).any(axis=1)),
     ]
     return regras
@@ -224,8 +231,9 @@ def _regras_dominio() -> list[tuple[str, str, Any]]:
 
 def verificar_dominio(fonte: pd.DataFrame, recorte: pd.DataFrame) -> dict[str, Any]:
     regras = []
-    for nome, descricao, funcao in _regras_dominio():
+    for coluna, nome, descricao, funcao in _regras_dominio():
         regras.append({
+            "coluna": coluna,
             "regra": nome,
             "descricao": descricao,
             "violacoes_fonte": int(funcao(fonte).fillna(False).sum()),
@@ -278,70 +286,33 @@ def verificar_dominio(fonte: pd.DataFrame, recorte: pd.DataFrame) -> dict[str, A
 
 
 # ---------------------------------------------------------------------------
-# Detectores univariados
+# Detectores univariados (Grubbs, ECOD, K-NN, DBSCAN e LOF vêm de deteccao.py)
 # ---------------------------------------------------------------------------
 
-def valor_critico_grubbs(n: int, alfa: float = ALFA_GRUBBS) -> float:
-    """G crítico bilateral: ((n−1)/√n)·√(t²/(n−2+t²)), t = t_{α/(2n), n−2}."""
-    t = stats.t.ppf(1 - alfa / (2 * n), n - 2)
-    return (n - 1) / sqrt(n) * sqrt(t**2 / (n - 2 + t**2))
+def _adversario(confronto: str) -> tuple[str | None, str | None]:
+    """'DAL vs. LAC' → ('LAC', 'casa'); 'DAL @ UTA' → ('UTA', 'fora')."""
+    texto = str(confronto or "")
+    if " vs. " in texto:
+        return texto.split(" vs. ")[-1].strip(), "casa"
+    if " @ " in texto:
+        return texto.split(" @ ")[-1].strip(), "fora"
+    return None, None
 
 
-def grubbs_iterativo(serie: pd.Series, alfa: float = ALFA_GRUBBS) -> dict[str, Any]:
-    """Teste de Grubbs bilateral aplicado repetidamente.
-
-    A cada passo, testa o valor mais distante da média; se G > G crítico, ele
-    é declarado outlier, removido, e o teste recomeça com n − 1 observações.
-    Para no primeiro passo não significativo.
-    """
-    restante = serie.dropna().astype(float)
-    passos, indices = [], []
-    while len(restante) >= 3:
-        n = len(restante)
-        desvio = restante.std(ddof=1)
-        if not desvio > 0:
-            break
-        distancias = (restante - restante.mean()).abs()
-        indice = distancias.idxmax()
-        g = float(distancias.loc[indice] / desvio)
-        g_critico = valor_critico_grubbs(n, alfa)
-        significativo = g > g_critico
-        passos.append({
-            "n": n,
-            "media": float(restante.mean()),
-            "desvio": float(desvio),
-            "valor": float(restante.loc[indice]),
-            "g": g,
-            "g_critico": g_critico,
-            "significativo": bool(significativo),
-        })
-        if not significativo:
-            break
-        indices.append(indice)
-        restante = restante.drop(indice)
-    return {"indices": indices, "valores": [float(serie.loc[i]) for i in indices], "passos": passos}
-
-
-def ecod_rotulos(matriz: np.ndarray, contaminacao: float = CONTAMINACAO_ECOD) -> dict[str, Any]:
-    """ECOD do pyod: rótulos, scores e limiar (import tardio: pesa no boot)."""
-    from pyod.models.ecod import ECOD
-
-    modelo = ECOD(contamination=contaminacao).fit(matriz)
-    return {
-        "rotulos": modelo.labels_.astype(bool),
-        "scores": modelo.decision_scores_,
-        "limiar": float(modelo.threshold_),
-    }
+def _jogo_detalhado(linha: pd.Series, coluna: str) -> dict[str, Any]:
+    adversario, mando = _adversario(linha.get("MATCHUP"))
+    return {**_jogo(linha), "adversario": adversario, "mando": mando, "valor": float(linha[coluna])}
 
 
 def _univariados(serie: pd.Series) -> dict[str, Any]:
+    """Resumo por coluna (18 colunas): Z-score, IQR, Grubbs e ECOD."""
     serie = serie.dropna().astype(float)
     desvio = serie.std(ddof=1)
     z = (serie - serie.mean()) / desvio if desvio > 0 else serie * 0
     mascara_z = z.abs() > LIMIAR_ZSCORE
     tukey = _estatisticas_de_serie(serie)
     grubbs = grubbs_iterativo(serie)
-    ecod = ecod_rotulos(serie.to_numpy().reshape(-1, 1))
+    ecod = ecod_por_proporcao(serie.to_numpy())
     shapiro_p = _finito(stats.shapiro(serie).pvalue) if serie.nunique() > 2 else None
     return {
         "n": int(serie.size),
@@ -371,6 +342,7 @@ def _univariados(serie: pd.Series) -> dict[str, Any]:
 
 
 METODOS_UNIVARIADOS = ["zscore", "iqr", "grubbs", "ecod"]
+METODOS_DETALHE = ["zscore", "iqr", "grubbs", "ecod", "knn", "dbscan", "lof"]
 
 
 def outliers_por_coluna(dados: pd.DataFrame) -> list[dict[str, Any]]:
@@ -391,6 +363,89 @@ def outliers_por_coluna(dados: pd.DataFrame) -> list[dict[str, Any]]:
     return linhas
 
 
+def _detalhe_variavel(dados: pd.DataFrame, time: str, variavel: str) -> dict[str, Any]:
+    """Os 7 métodos numa variável de um time, com os jogos marcados."""
+    coluna = MAPA_VARIAVEIS[variavel]
+    base = dados[dados["TEAM_NAME"] == time].dropna(subset=[coluna])
+    base = base.assign(_data=pd.to_datetime(base["GAME_DATE"], errors="coerce")).sort_values("_data")
+    serie = base[coluna].astype(float)
+    valores = serie.to_numpy()
+
+    desvio = serie.std(ddof=1)
+    z = (serie - serie.mean()) / desvio if desvio > 0 else serie * 0
+    tukey = _estatisticas_de_serie(serie)
+    grubbs = grubbs_iterativo(serie)
+    distancia = detectar(valores)
+    mascaras = {
+        "zscore": (z.abs() > LIMIAR_ZSCORE).to_numpy(),
+        "iqr": ((serie < tukey["limite_inferior"]) | (serie > tukey["limite_superior"])).to_numpy(),
+        "grubbs": serie.index.isin(grubbs["indices"]),
+        **{m: np.asarray(v, dtype=bool) for m, v in distancia["rotulos"].items()},
+    }
+    linhas = list(base.iterrows())
+    metodos = {
+        m: {
+            "quantidade": int(mascara.sum()),
+            "jogos": [_jogo_detalhado(linhas[i][1], coluna) for i in np.flatnonzero(mascara)],
+        }
+        for m, mascara in mascaras.items()
+    }
+    algum = np.logical_or.reduce(list(mascaras.values()))
+    concordancia = []
+    for i in np.flatnonzero(algum):
+        marcas = {m: bool(mascaras[m][i]) for m in METODOS_DETALHE}
+        concordancia.append({
+            **_jogo_detalhado(linhas[i][1], coluna),
+            "z": _finito(z.iloc[i]),
+            "metodos": marcas,
+            "total": sum(marcas.values()),
+        })
+    concordancia.sort(key=lambda j: (-j["total"], -abs(j["z"] or 0)))
+    return {
+        "variavel": variavel,
+        "coluna": coluna,
+        "unidade": UNIDADES[variavel],
+        "time": time,
+        "n": int(serie.size),
+        "limites_tukey": [tukey["limite_inferior"], tukey["limite_superior"]],
+        "grubbs_passos": grubbs["passos"],
+        "parametros": distancia["parametros"],
+        "metodos": metodos,
+        "concordancia": concordancia,
+        "_mascaras": mascaras,
+    }
+
+
+def outliers_por_variavel(dados: pd.DataFrame) -> dict[str, Any]:
+    """7 variáveis × 2 times × 7 métodos, com jogos e concordância."""
+    detalhes = [
+        _detalhe_variavel(dados, time, variavel)
+        for variavel in VARIAVEIS_ANALISADAS for time in TIMES_ANALISADOS
+    ]
+    # Matriz de concordância: em quantos pares (jogo, variável) cada dupla de
+    # métodos marcou o mesmo jogo. A diagonal é o total de cada método.
+    matriz = {
+        a: {b: int(sum((d["_mascaras"][a] & d["_mascaras"][b]).sum() for d in detalhes)) for b in METODOS_DETALHE}
+        for a in METODOS_DETALHE
+    }
+    jogos_marcados = sum(len(d["concordancia"]) for d in detalhes)
+    unanimes = sum(1 for d in detalhes for j in d["concordancia"] if j["total"] == len(METODOS_DETALHE))
+    for d in detalhes:
+        del d["_mascaras"]
+    parametros = {
+        f"{n}": obter_calibracao(n, 1)
+        for n in sorted({d["n"] for d in detalhes})
+    }
+    return {
+        "metodos": METODOS_DETALHE,
+        "detalhes": detalhes,
+        "matriz_concordancia": matriz,
+        "jogos_marcados": jogos_marcados,
+        "marcados_por_todos": unanimes,
+        "parametros_por_n": parametros,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Detectores multivariados (7 variáveis analisadas, por time)
 # ---------------------------------------------------------------------------
@@ -400,26 +455,17 @@ def outliers_multivariados(dados: pd.DataFrame) -> dict[str, Any]:
     resultado = {}
     for time in TIMES_ANALISADOS:
         base = dados[dados["TEAM_NAME"] == time].dropna(subset=colunas)
-        matriz = base[colunas].to_numpy(dtype=float)
-        desvio = matriz.std(axis=0)
-        padronizada = (matriz - matriz.mean(axis=0)) / np.where(desvio == 0, 1, desvio)
-        n = len(padronizada)
-        vizinhos = NearestNeighbors(n_neighbors=min(6, n)).fit(padronizada)
-        distancias, _ = vizinhos.kneighbors(padronizada)
-        dist_k = distancias[:, -1]  # 5º vizinho (o 1º é o próprio ponto)
-        rotulos = {
-            "ecod": ecod_rotulos(padronizada)["rotulos"],
-            "knn": dist_k > np.quantile(dist_k, 0.95),
-            "dbscan": DBSCAN(eps=2.2, min_samples=5).fit_predict(padronizada) == -1,
-            "lof": LocalOutlierFactor(n_neighbors=min(20, n - 1)).fit_predict(padronizada) == -1,
-        }
+        deteccao = detectar(base[colunas].to_numpy(dtype=float))
+        rotulos = deteccao["rotulos"]
         resultado[time] = {
-            "n": n,
+            "n": int(len(base)),
+            "parametros": deteccao["parametros"],
             "metodos": {
                 metodo: {
                     "quantidade": int(mascara.sum()),
                     "jogos": [
-                        {**_jogo(linha), "valores": {c: float(linha[c]) for c in colunas}}
+                        {**_jogo(linha), "adversario": _adversario(linha.get("MATCHUP"))[0],
+                         "valores": {c: float(linha[c]) for c in colunas}}
                         for _, linha in base[mascara].iterrows()
                     ],
                 }
@@ -597,24 +643,31 @@ MECANISMOS = [
         "sigla": "MCAR",
         "nome": "Missing Completely At Random",
         "definicao": "A probabilidade de um valor faltar não depende de nenhum dado, observado ou não: P(R | Y_obs, Y_falt) = P(R).",
-        "exemplo": "A planilha de um jogo some por falha do servidor, sem relação com o placar ou com o time.",
+        "exemplo": "O arquivo do box-score de alguns jogos se corrompe numa falha do servidor da liga, sorteando jogos sem relação com placar, time ou adversário.",
         "consequencia": "Os casos completos são uma subamostra aleatória: excluir linhas só reduz n (perde precisão), sem viés.",
     },
     {
         "sigla": "MAR",
         "nome": "Missing At Random",
         "definicao": "A ausência depende apenas de variáveis observadas: P(R | Y_obs, Y_falt) = P(R | Y_obs).",
-        "exemplo": "Jogos fora de casa (MATCHUP com '@', observado) têm mais chance de não registrar tocos.",
+        "exemplo": "Em jogos fora de casa (MATCHUP com '@', observado) a mesa local de outra arena deixa de registrar os tocos com mais frequência; dado o mando, a falta não depende de quantos tocos houve.",
         "consequencia": "Excluir linhas gera viés; imputação múltipla ou máxima verossimilhança condicionadas às observadas corrigem.",
     },
     {
         "sigla": "MNAR",
         "nome": "Missing Not At Random",
         "definicao": "A ausência depende do próprio valor faltante (ou de algo não medido), mesmo após condicionar nas observadas.",
-        "exemplo": "Pontuações muito baixas deixam de ser publicadas justamente por serem baixas.",
+        "exemplo": "Um time omite do relatório as faltas pessoais justamente nos jogos em que cometeu muitas faltas: a chance de faltar depende do próprio PF.",
         "consequencia": "Nenhum teste nos dados observados confirma MNAR; exige modelar o mecanismo (seleção, pattern-mixture) e análise de sensibilidade.",
     },
 ]
+
+MOTIVO_NAO_APLICADO = (
+    "Não foi aplicado à base real porque o recorte dos dois times tem 0 valores ausentes em todas as colunas: "
+    "o indicador de ausência R é constante (sempre 0), não existem padrões de ausência diferentes para comparar "
+    "e qualquer estatística do teste ficaria indefinida. A demonstração abaixo usa cópias com ausência simulada "
+    "apenas para mostrar como o teste seria lido."
+)
 
 TESTES_AUSENCIA = [
     {
@@ -626,6 +679,13 @@ TESTES_AUSENCIA = [
         "decisao": "p < 0,05 → rejeita MCAR (as médias variam com o padrão de ausência).",
         "porque": "É o teste global de MCAR mais usado: um único p-valor para todas as variáveis; decide se a exclusão de linhas é aceitável.",
         "limitacoes": "Supõe normalidade e Σ comum; pouco poder com poucos ausentes; não rejeitar não prova MCAR; não separa MAR de MNAR.",
+        "paragrafos": [
+            "O teste de Little verifica se os dados são MCAR comparando, para cada padrão de ausência, a média das "
+            "colunas observadas com a média geral estimada por EM. A hipótese nula é que os dados são MCAR: se a "
+            "ausência fosse puro acaso, os grupos de padrão teriam as mesmas médias. Aqui ele seria aplicado às 7 "
+            "variáveis (PTS, REB, AST, STL, BLK, PF, FG3M), e d² seria comparado a uma χ².",
+            MOTIVO_NAO_APLICADO,
+        ],
         "implementado": True,
     },
     {
@@ -636,7 +696,18 @@ TESTES_AUSENCIA = [
         "estatistica": "Hawkins: F de Neyman sobre os p-valores por grupo; não paramétrico: estatística de Anderson-Darling k-amostras.",
         "decisao": "Se Hawkins não rejeita, aceita MCAR. Se rejeita e o Anderson-Darling também, rejeita MCAR; se só Hawkins rejeita, o problema é não normalidade.",
         "porque": "Complementa o Little testando também as covariâncias (não só médias) e distingue 'não é MCAR' de 'não é normal'.",
-        "limitacoes": "Exige grupos com casos suficientes por padrão; depende da imputação; não separa MAR de MNAR. Apresentado apenas em teoria (não implementado aqui).",
+        "limitacoes": "Exige grupos com casos suficientes por padrão; depende da imputação; não separa MAR de MNAR.",
+        "paragrafos": [
+            "O teste de Jamshidian-Jalal testa MCAR olhando a homogeneidade das covariâncias entre os grupos de "
+            "padrão de ausência, e não só das médias como o Little. A hipótese nula é que os dados são MCAR e que as "
+            "covariâncias são iguais entre os grupos. Na prática, imputa-se os ausentes, aplica-se o teste de Hawkins "
+            "e, se ele rejeitar, um teste não paramétrico separa 'não é normal' de 'não é MCAR'. Aqui seria aplicado "
+            "às 7 variáveis, com cada padrão de ausência como grupo.",
+            MOTIVO_NAO_APLICADO.replace(
+                " A demonstração abaixo usa cópias com ausência simulada apenas para mostrar como o teste seria lido.",
+                " Ele também exige vários padrões com casos suficientes, o que não existe sem ausentes; por isso é "
+                "apresentado só em teoria, sem implementação."),
+        ],
         "implementado": False,
     },
     {
@@ -646,8 +717,19 @@ TESTES_AUSENCIA = [
         "como": "Em medidas repetidas, compara, em cada instante, a distribuição dos valores já observados de quem sai com a de quem permanece (testes de postos do tipo Wilcoxon), combinando os instantes numa estatística global.",
         "estatistica": "Soma ponderada das estatísticas de postos por instante, padronizada (aprox. normal).",
         "decisao": "p < 0,05 → quem abandona difere de quem permanece nos valores anteriores: o dropout não é MCAR.",
-        "porque": "Não paramétrico e próprio para séries por indivíduo (ex.: jogos sucessivos de um jogador que se lesiona), onde o Little não usa a ordem temporal.",
-        "limitacoes": "Exige estrutura longitudinal com dropout monótono; detecta dependência das observadas (MAR), nunca MNAR. Apresentado apenas em teoria (não implementado aqui).",
+        "porque": "Não paramétrico e próprio para séries ao longo do tempo, onde o Little não usa a ordem das medidas.",
+        "limitacoes": "Exige estrutura longitudinal com dropout monótono; detecta dependência das observadas (MAR), nunca MNAR.",
+        "paragrafos": [
+            "O teste de Listing e Schlittgen é feito para dados longitudinais com abandono (dropout): verifica se "
+            "quem deixa de ser medido a partir de certo instante tinha, antes, valores diferentes de quem continua. "
+            "A hipótese nula é que o abandono é completamente aleatório. No basquete, ele se aplicaria a séries de "
+            "jogos sucessivos, por exemplo um jogador cujos registros param após uma lesão: compara-se, jogo a jogo, "
+            "o desempenho anterior de quem saiu com o de quem seguiu, por testes de postos.",
+            MOTIVO_NAO_APLICADO.replace(
+                " A demonstração abaixo usa cópias com ausência simulada apenas para mostrar como o teste seria lido.",
+                " Além disso, a base é de times (que jogam todos os jogos), sem séries interrompidas; por isso o teste "
+                "é apresentado só em teoria, sem implementação."),
+        ],
         "implementado": False,
     },
     {
@@ -659,78 +741,172 @@ TESTES_AUSENCIA = [
         "decisao": "p < 0,05 → a ausência é previsível pelas observadas: rejeita MCAR e indica quais variáveis entram na imputação (MAR).",
         "porque": "Mostra QUAIS variáveis explicam a ausência e quanto (razão de chances), o que orienta o modelo de imputação.",
         "limitacoes": "Só detecta relação com o que foi observado; MNAR passa despercebido; supõe forma logística linear.",
+        "paragrafos": [
+            "A abordagem de Fairclough modela a própria ausência: cria-se Rᵢ = 1 quando o valor falta e ajusta-se "
+            "uma regressão logística de R sobre as variáveis observadas. A hipótese nula é que nenhuma delas muda a "
+            "chance de ausência, o que é compatível com MCAR; coeficientes significativos indicam MAR e dizem quais "
+            "variáveis precisam entrar na imputação. Aqui, R seria o indicador de ausência de uma variável (ex.: PTS) "
+            "e os preditores, as outras seis.",
+            MOTIVO_NAO_APLICADO + " Com R sempre 0, a logística nem pode ser ajustada (não há casos com R = 1).",
+        ],
         "implementado": True,
     },
 ]
 
-METODOS_OUTLIER = [
-    {
-        "chave": "zscore", "nome": "Z-score", "tipo": "univariado",
-        "formula": f"zᵢ = (xᵢ − x̄) / s; outlier se |zᵢ| > {_n(LIMIAR_ZSCORE, 0)}",
-        "como": "Mede a distância à média em desvios padrão amostrais (n − 1).",
-        "premissas": "Distribuição aproximadamente normal; a média e o DP são inflados pelos próprios extremos (mascaramento).",
-        "parametros": f"Limiar |z| > {_n(LIMIAR_ZSCORE, 0)} (≈ 0,27% de uma normal).",
-    },
-    {
-        "chave": "iqr", "nome": "IQR / boxplot (Tukey)", "tipo": "univariado",
-        "formula": "outlier se x < Q1 − 1,5·IQR ou x > Q3 + 1,5·IQR",
-        "como": "Usa quartis (interpolação linear), que não são afetados pelos extremos; é o critério principal do relatório e o mesmo do boxplot.",
-        "premissas": "Nenhuma distribuição; em assimetria forte marca mais pontos na cauda longa.",
-        "parametros": "k = 1,5 (k = 3 para extremos).",
-    },
-    {
-        "chave": "grubbs", "nome": "Teste de Grubbs (iterativo)", "tipo": "univariado",
-        "formula": "G = max|xᵢ − x̄| / s;  G_crít = ((n−1)/√n)·√(t² / (n − 2 + t²)),  t = t_{α/(2n), n−2}",
-        "como": f"Testa o valor mais distante da média: H₀ 'não há outlier'. Se G > G_crít (α = {_n(ALFA_GRUBBS)} bilateral), remove o valor e repete com n − 1 até um passo não significativo.",
-        "premissas": "Normalidade (o valor crítico vem da distribuição t). Por isso o Shapiro-Wilk de cada coluna é exibido: com p < 0,05, o resultado do Grubbs deve ser lido com cautela.",
-        "parametros": f"α = {_n(ALFA_GRUBBS)}; o α vale por passo (repetir infla o erro tipo I); dois extremos próximos podem mascarar-se mutuamente (o ESD generalizado de Rosner trata isso).",
-    },
-    {
-        "chave": "ecod", "nome": "ECOD", "tipo": "univariado e multivariado",
-        "formula": "Oᵢ = max{ Σⱼ −log F̂ⱼ(xᵢⱼ),  Σⱼ −log(1 − F̂ⱼ(xᵢⱼ)),  Σⱼ cauda escolhida pela assimetria da coluna j }",
-        "como": "Estima a distribuição acumulada empírica de cada coluna e soma as probabilidades de cauda em escala −log: quanto mais improvável na cauda, maior o score. Implementação real do pyod (pyod.models.ecod.ECOD).",
-        "premissas": "Não paramétrico e sem hiperparâmetros de distância; trata as colunas como independentes (soma das caudas).",
-        "parametros": f"contamination = {_n(CONTAMINACAO_ECOD)}: o limiar é o percentil {_n((1 - CONTAMINACAO_ECOD) * 100, 0)} dos scores, então ≈ {_n(CONTAMINACAO_ECOD * 100, 0)}% dos jogos são marcados por construção (empates podem mudar a contagem). É uma suposição a priori, não um teste.",
-    },
-    {
-        "chave": "knn", "nome": "K-NN (distância ao k-ésimo vizinho)", "tipo": "multivariado",
-        "formula": "scoreᵢ = distância euclidiana ao 5º vizinho mais próximo (dados padronizados); outlier se > percentil 95",
-        "como": "Um jogo isolado no espaço das 7 variáveis fica longe de seus vizinhos.",
-        "premissas": "Escalas comparáveis (por isso a padronização); sensível à escolha de k.",
-        "parametros": "k = 5; corte no percentil 95 (≈ 5% marcados por construção).",
-    },
-    {
-        "chave": "dbscan", "nome": "DBSCAN", "tipo": "multivariado",
-        "formula": "ponto-núcleo: ≥ min_samples vizinhos no raio ε; ruído = ponto que não é núcleo nem alcançável por um",
-        "como": "Agrupa regiões densas; o que sobra fora de qualquer grupo é ruído (outlier).",
-        "premissas": "Densidade homogênea entre grupos; em 7 dimensões as distâncias se concentram e ε precisa ser maior.",
-        "parametros": "ε = 2,2 e min_samples = 5 nos dados padronizados.",
-    },
-    {
-        "chave": "lof", "nome": "LOF (Local Outlier Factor)", "tipo": "multivariado",
-        "formula": "LOF(p) = média da densidade local dos vizinhos / densidade local de p; outlier se LOF ≫ 1",
-        "como": "Compara a densidade de cada jogo com a de seus vizinhos: detecta pontos isolados em relação à sua região, não ao todo.",
-        "premissas": "Escalas comparáveis; depende de n_neighbors.",
-        "parametros": "n_neighbors = 20, contamination = 'auto' (limiar do scikit-learn).",
-    },
-]
 
-NOMES_METODOS = {m["chave"]: m["nome"] for m in METODOS_OUTLIER}
+def _metodos_outlier(calibracao: dict[str, Any], calibracao_7d: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Teoria de cada detector, com os parâmetros efetivamente usados."""
+    taxa = _n(TAXA_REFERENCIA * 100)
+    n = calibracao["n"]
+    multi = ""
+    if calibracao_7d:
+        multi = (f" No modo multivariado (7 variáveis): k = {calibracao_7d['knn_k']}, corte "
+                 f"{_n(calibracao_7d['knn_corte'])}; ε = {_n(calibracao_7d['dbscan_eps'])}, min_samples = "
+                 f"{calibracao_7d['dbscan_min_samples']}; LOF > {_n(calibracao_7d['lof_corte'])}; ECOD > "
+                 f"{_n(calibracao_7d['ecod_corte'])}.")
+    regra_calibracao = (
+        f"Calibração: em {calibracao['repeticoes']} amostras normais simuladas com n = {n} (semente fixa), o corte "
+        f"é escolhido para marcar {taxa}% dos pontos — a mesma proporção que a regra de Tukey marca numa normal "
+        "(fora de ±2,698 σ). Assim os métodos ficam comparáveis entre si e com o boxplot."
+    )
+    return [
+        {
+            "chave": "zscore", "nome": "Z-score", "tipo": "univariado",
+            "formula": f"zᵢ = (xᵢ − x̄) / s; outlier se |zᵢ| > {_n(LIMIAR_ZSCORE, 0)}",
+            "como": "Mede a distância à média em desvios padrão amostrais (n − 1).",
+            "premissas": "Distribuição aproximadamente normal; a média e o DP são inflados pelos próprios extremos (mascaramento).",
+            "parametros": f"Limiar |z| > {_n(LIMIAR_ZSCORE, 0)}: convenção do enunciado (≈ 0,27% de uma normal).",
+        },
+        {
+            "chave": "iqr", "nome": "IQR / boxplot (Tukey)", "tipo": "univariado",
+            "formula": "outlier se x < Q1 − 1,5·IQR ou x > Q3 + 1,5·IQR",
+            "como": "Usa quartis (interpolação linear), que não são afetados pelos extremos; é o critério principal do relatório e o mesmo do boxplot.",
+            "premissas": "Nenhuma distribuição; em assimetria forte marca mais pontos na cauda longa.",
+            "parametros": f"k = 1,5 (Tukey, 1977); numa normal corresponde a ±2,698 σ e marca {taxa}% dos pontos — a taxa de referência usada para calibrar os demais.",
+        },
+        {
+            "chave": "grubbs", "nome": "Teste de Grubbs (iterativo)", "tipo": "univariado",
+            "formula": "G = max|xᵢ − x̄| / s;  G_crít = ((n−1)/√n)·√(t² / (n − 2 + t²)),  t = t_{α/(2n), n−2}",
+            "como": f"Testa o valor mais distante da média: H₀ 'não há outlier'. Se G > G_crít (α = {_n(ALFA_GRUBBS)} bilateral), remove o valor e repete com n − 1 até um passo não significativo.",
+            "premissas": "Normalidade (o valor crítico vem da distribuição t). O Shapiro-Wilk de cada coluna é exibido: com p < 0,05, o Grubbs deve ser lido com cautela.",
+            "parametros": f"α = {_n(ALFA_GRUBBS)} (G_crít = {_n(valor_critico_grubbs(n))} para n = {n}); o α vale por passo, e dois extremos próximos podem mascarar-se (o ESD generalizado de Rosner trata isso).",
+        },
+        {
+            "chave": "ecod", "nome": "ECOD (Li et al., 2022)", "tipo": "univariado e multivariado",
+            "formula": "F̂_esq(x) = #{Xᵢ ≤ x}/n, F̂_dir(x) = #{Xᵢ ≥ x}/n;  Oᵢ = max{ Σⱼ −log F̂_esq,ⱼ(xᵢⱼ), Σⱼ −log F̂_dir,ⱼ(xᵢⱼ), Σⱼ cauda pela assimetria γⱼ }",
+            "como": "Estima as funções de distribuição empíricas à esquerda e à direita de cada coluna, escolhe a cauda pela assimetria (γ < 0 → esquerda, senão direita) e soma as probabilidades de cauda em escala −log. Implementado com numpy, seguindo o Algoritmo 1 do artigo.",
+            "premissas": "Não paramétrico e sem parâmetros de distância; trata as colunas como independentes (soma das caudas). Numa única coluna o score depende só do posto do valor, não da distância.",
+            "parametros": f"Univariado: como o score depende só do posto, qualquer corte equivale a fixar uma proporção; usa-se a taxa de referência ({taxa}%, percentil {_n(100 - TAXA_REFERENCIA * 100)} dos scores). Em n = {n} isso marca no máximo o jogo de cauda mais extrema, e só quando nenhum outro jogo tem o mesmo score — inclusive o extremo da cauda oposta: se o mínimo e o máximo são ambos únicos, os dois têm probabilidade de cauda 1/n, empatam e nenhum é marcado (é o que acontece com o jogo de 15 tocos). Multivariado: corte calibrado sob normalidade.",
+        },
+        {
+            "chave": "knn", "nome": "K-NN (distância ao k-ésimo vizinho)", "tipo": "univariado e multivariado",
+            "formula": "scoreᵢ = distância ao k-ésimo vizinho mais próximo, em σ robusto ((x − mediana) ÷ (IQR/1,349))",
+            "como": "Um jogo isolado fica longe dos seus vizinhos; quanto maior a distância ao k-ésimo, mais isolado.",
+            "premissas": "Escalas comparáveis (por isso a padronização robusta); sensível à escolha de k.",
+            "parametros": f"k = round(√n) = {calibracao['knn_k']} (regra usual); corte = {_n(calibracao['knn_corte'])} σ robusto. {regra_calibracao}{multi}",
+        },
+        {
+            "chave": "dbscan", "nome": "DBSCAN", "tipo": "univariado e multivariado",
+            "formula": "ponto-núcleo: ≥ min_samples vizinhos no raio ε; ruído = ponto que não é núcleo nem está a ≤ ε de um núcleo",
+            "como": "Agrupa regiões densas; o que sobra fora de qualquer grupo é ruído (outlier).",
+            "premissas": "Densidade homogênea; em várias dimensões as distâncias se concentram e ε precisa crescer.",
+            "parametros": f"min_samples = {calibracao['dbscan_min_samples']} (Ester et al., 1996: 4 em baixa dimensão; 2·dimensão acima, Sander et al., 1998); ε = {_n(calibracao['dbscan_eps'])} σ robusto, o menor raio cuja taxa de ruído sob normalidade é ≤ {taxa}% (busca binária).",
+        },
+        {
+            "chave": "lof", "nome": "LOF (Local Outlier Factor)", "tipo": "univariado e multivariado",
+            "formula": "LOF(p) = média da densidade local dos vizinhos ÷ densidade local de p; ≈ 1 para pontos típicos",
+            "como": "Compara a densidade de cada jogo com a dos vizinhos: detecta pontos isolados em relação à própria região, não ao todo.",
+            "premissas": "Escalas comparáveis; depende de n_neighbors; valores repetidos (contagens) aumentam a densidade local.",
+            "parametros": f"n_neighbors = {calibracao['lof_vizinhos']} (Breunig et al., 2000, sugerem 10 a 20 ou mais); corte LOF > {_n(calibracao['lof_corte'])}, calibrado sob normalidade — mais exigente que a regra prática LOF > {_n(LOF_REGRA_PRATICA)}, que em dados normais com n = {n} marcaria {_n(calibracao['lof_taxa_regra_pratica'] * 100)}% dos jogos.",
+        },
+    ]
+
+
+NOMES_METODOS = {
+    "zscore": "Z-score", "iqr": "IQR / boxplot (Tukey)", "grubbs": "Teste de Grubbs (iterativo)",
+    "ecod": "ECOD (Li et al., 2022)", "knn": "K-NN (distância ao k-ésimo vizinho)", "dbscan": "DBSCAN",
+    "lof": "LOF (Local Outlier Factor)",
+}
+
+
+def _textos_por_variavel(por_variavel: dict[str, Any]) -> list[dict[str, Any]]:
+    metodos = por_variavel["metodos"]
+    detalhes = por_variavel["detalhes"]
+    matriz = por_variavel["matriz_concordancia"]
+    totais = ", ".join(f"{NOMES_METODOS[m].split(' (')[0]} {matriz[m][m]}" for m in metodos)
+    fortes = [
+        (d, j) for d in detalhes for j in d["concordancia"] if j["total"] >= 4
+    ]
+    isolados = [
+        (d, j) for d in detalhes for j in d["concordancia"] if j["total"] == 1
+    ]
+    sem_marcas = [f"{d['variavel']} ({_curto(d['time'])})" for d in detalhes if not d["concordancia"]]
+
+    def jogo(d, j):
+        return (f"{d['variavel']} {_n(j['valor'], 0)} ({_curto(d['time'])}, {j['data']} contra "
+                f"{j['adversario']}, {j['total']} de {len(metodos)} métodos)")
+
+    paragrafos = [
+        f"Nas 7 variáveis × 2 times, o número de jogos marcados por método é: {totais}. "
+        f"Ao todo, {por_variavel['jogos_marcados']} pares (jogo, variável) foram marcados por pelo menos um método "
+        f"e {por_variavel['marcados_por_todos']} por todos os {len(metodos)}.",
+    ]
+    if fortes:
+        paragrafos.append(
+            "Os casos em que 4 ou mais métodos concordam — os outliers mais sólidos — são: "
+            + _lista([jogo(d, j) for d, j in fortes]) + "."
+        )
+    if isolados:
+        por_metodo: dict[str, int] = {}
+        for _, j in isolados:
+            metodo = next(m for m, v in j["metodos"].items() if v)
+            por_metodo[metodo] = por_metodo.get(metodo, 0) + 1
+        paragrafos.append(
+            f"{_plural(len(isolados), 'marcação foi feita', 'marcações foram feitas')} por um único método ("
+            + ", ".join(f"{NOMES_METODOS[m].split(' (')[0]}: {q}" for m, q in por_metodo.items())
+            + "). Marcações isoladas são fracas: dependem da regra de um método só e não se sustentam nos demais."
+        )
+    if sem_marcas:
+        paragrafos.append(
+            f"Nenhum método marcou jogo algum em {_lista(sem_marcas)}: distribuições sem valores atípicos."
+        )
+    secoes = [{"titulo": "Outliers por variável: quantos e quais jogos", "paragrafos": paragrafos}]
+
+    pares = sorted(
+        ((a, b, matriz[a][b]) for i, a in enumerate(metodos) for b in metodos[i + 1:]),
+        key=lambda item: -item[2],
+    )
+
+    def concordancia(a, b, q):
+        uniao = matriz[a][a] + matriz[b][b] - q
+        return f"{NOMES_METODOS[a].split(' (')[0]} e {NOMES_METODOS[b].split(' (')[0]} ({q} em comum de {uniao})"
+
+    secoes.append({"titulo": "Concordância entre os métodos", "paragrafos": [
+        "Os pares que mais coincidem são " + _lista([concordancia(*p) for p in pares[:3] if p[2] > 0])
+        + ". Como K-NN, DBSCAN e LOF foram calibrados para marcar, em dados normais, a mesma proporção da regra "
+        "de Tukey, a coincidência com o IQR indica que eles enxergam os mesmos jogos isolados, e não que copiam a regra.",
+        "O Z-score (|z| > 3) e o Grubbs são mais conservadores: exigem que o valor seja improvável sob uma normal, "
+        "com corte perto de 3 desvios padrão, enquanto o IQR marca a partir de 2,7. O ECOD univariado depende só do "
+        "posto do valor; por isso tende a marcar o jogo mais extremo de cada coluna mesmo quando ele está próximo "
+        "dos demais, e é o que menos concorda com os métodos de distância.",
+    ]})
+    return secoes
 
 
 def _textos_outliers(
-    por_coluna: list[dict[str, Any]], multivariados: dict[str, Any]
+    por_coluna: list[dict[str, Any]], por_variavel: dict[str, Any], multivariados: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    secoes = []
+    secoes = _textos_por_variavel(por_variavel)
     totais = {
         time: {m: sum(l["times"][time][m]["quantidade"] for l in por_coluna) for m in METODOS_UNIVARIADOS}
         for time in TIMES_ANALISADOS
     }
     celulas = len(por_coluna) * len(TIMES_ANALISADOS)
     paragrafos = [
-        f"Em {len(por_coluna)} colunas de box-score × {len(TIMES_ANALISADOS)} times, os totais de valores marcados são: "
+        f"No resumo das {len(por_coluna)} colunas de box-score × {len(TIMES_ANALISADOS)} times, os totais de valores "
+        "marcados são: "
         + "; ".join(
-            f"{_curto(t)} — " + ", ".join(f"{NOMES_METODOS[m]} {totais[t][m]}" for m in METODOS_UNIVARIADOS)
+            f"{_curto(t)} — " + ", ".join(f"{NOMES_METODOS[m].split(' (')[0]} {totais[t][m]}" for m in METODOS_UNIVARIADOS)
             for t in TIMES_ANALISADOS
         ) + "."
     ]
@@ -742,10 +918,9 @@ def _textos_outliers(
     destaques = [f"{c} ({_curto(t)}, {q})" for c, t, q in ordem[:4] if q > 0]
     if destaques:
         paragrafos.append(
-            "Somando Z-score, IQR e Grubbs, as colunas com mais marcações são "
-            + ", ".join(destaques) + ". O ECOD fica fora dessa soma porque marca ≈ 5% por construção."
+            "Somando Z-score, IQR e Grubbs, as colunas com mais marcações são " + _lista(destaques) + "."
         )
-    secoes.append({"titulo": "Quantos outliers por coluna", "paragrafos": paragrafos})
+    secoes.append({"titulo": "Resumo nas 18 colunas de box-score", "paragrafos": paragrafos})
 
     nao_normais = [
         (l["coluna"], t) for l in por_coluna for t in TIMES_ANALISADOS
@@ -800,16 +975,16 @@ def _textos_outliers(
     for time in TIMES_ANALISADOS:
         info = multivariados["times"][time]
         contagens = ", ".join(
-            f"{NOMES_METODOS[m]} {info['metodos'][m]['quantidade']}" for m in ("ecod", "knn", "dbscan", "lof")
+            f"{NOMES_METODOS[m].split(' (')[0]} {info['metodos'][m]['quantidade']}" for m in ("ecod", "knn", "dbscan", "lof")
         )
         paragrafos_mv.append(
-            f"{_curto(time)} ({info['n']} jogos, 7 variáveis padronizadas): {contagens}; "
+            f"{_curto(time)} ({info['n']} jogos, 7 variáveis em σ robusto): {contagens}; "
             f"{_plural(info['em_todos'], 'jogo marcado', 'jogos marcados')} pelos quatro métodos ao mesmo tempo."
         )
     paragrafos_mv.append(
         "Os métodos multivariados avaliam o jogo inteiro (as 7 variáveis juntas): um jogo pode ser atípico pela "
-        "combinação de valores sem ter nenhuma coluna fora dos limites univariados. ECOD e K-NN marcam ≈ 5% por "
-        "construção; DBSCAN e LOF decidem pela densidade, por isso as contagens variam mais entre eles."
+        "combinação de valores sem ter nenhuma coluna fora dos limites univariados. Os quatro cortes foram "
+        "calibrados em normais de 7 dimensões para a mesma taxa de referência dos univariados."
     )
     secoes.append({"titulo": "Outliers multivariados", "paragrafos": paragrafos_mv})
     return secoes
@@ -937,6 +1112,7 @@ def calcular_qualidade(
     zeros = contar_zeros_e_negativos(recorte)
     dominio = verificar_dominio(fonte, recorte)
     por_coluna = outliers_por_coluna(dados)
+    por_variavel = outliers_por_variavel(dados)
     multivariados = outliers_multivariados(dados)
     demonstracao = demonstrar_testes_ausencia(dados)
     total_ausentes = sum(l["tratado"] or 0 for l in ausentes)
@@ -952,16 +1128,25 @@ def calcular_qualidade(
         "zeros_negativos": zeros,
         "dominio": dominio,
         "mecanismos": MECANISMOS,
-        "testes_ausencia": [{**t, "status_base_real": status} for t in TESTES_AUSENCIA],
+        "testes_ausencia": [
+            {**t, "status_base_real": status,
+             # O motivo "0 ausentes" só vale se for verdade nos dados.
+             "paragrafos": t["paragrafos"] if total_ausentes == 0 else [t["paragrafos"][0], status]}
+            for t in TESTES_AUSENCIA
+        ],
         "demonstracao": demonstracao,
-        "metodos": METODOS_OUTLIER,
+        "metodos": _metodos_outlier(
+            obter_calibracao(max(d["n"] for d in por_variavel["detalhes"]), 1),
+            next(iter(multivariados["times"].values()))["parametros"],
+        ),
         "parametros": {
             "alfa_grubbs": ALFA_GRUBBS,
-            "contaminacao_ecod": CONTAMINACAO_ECOD,
             "limiar_zscore": LIMIAR_ZSCORE,
+            "taxa_referencia": TAXA_REFERENCIA,
         },
         "outliers_por_coluna": por_coluna,
+        "outliers_por_variavel": por_variavel,
         "outliers_multivariados": multivariados,
         "secoes": _textos_base(ausentes, duplicatas, zeros, dominio, demonstracao)
-        + _textos_outliers(por_coluna, multivariados),
+        + _textos_outliers(por_coluna, por_variavel, multivariados),
     }

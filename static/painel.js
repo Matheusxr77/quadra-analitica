@@ -322,10 +322,10 @@ async function carregarQualidade() {
 
   // 3. Testes + demonstração
   document.getElementById("q-testes").innerHTML = dados.testes_ausencia.map((t) =>
-    cartaoTexto(t.nome, t.referencia, [["Hipóteses", t.hipotese], ["Como funciona", t.como], ["Estatística", t.estatistica], ["Decisão", t.decisao], ["Por que usar", t.porque], ["Limitações", t.limitacoes], ["Nesta base", t.status_base_real], ["Neste site", t.implementado ? "Implementado e aplicado na demonstração abaixo." : "Apresentado em teoria (não implementado)."]])).join("");
+    `<div class="cartao-texto"><h4>${escaparHtml(t.nome)}</h4><p class="cartao-sub">${escaparHtml(t.referencia)}</p>${t.paragrafos.map((p) => `<p class="cartao-paragrafo">${escaparHtml(p)}</p>`).join("")}<dl>${[["Hipóteses", t.hipotese], ["Estatística", t.estatistica], ["Decisão", t.decisao], ["Limitações", t.limitacoes], ["Neste site", t.implementado ? "Implementado; usado apenas no exemplo didático abaixo." : "Apresentado em teoria (não implementado)."]].map(([r, v]) => `<dt>${r}</dt><dd>${escaparHtml(v)}</dd>`).join("")}</dl></div>`).join("");
   const demo = dados.demonstracao;
   document.getElementById("q-demo-nota").textContent =
-    `Cópias do recorte com ${demo.variavel_alvo} apagado de propósito (semente ${demo.semente}); variáveis: ${demo.variaveis.join(", ")}. Decisão com α = ${formatar(demo.alfa)}. A base real não é alterada.`;
+    `Exemplo didático: cópias do recorte com ${demo.variavel_alvo} apagado de propósito (semente ${demo.semente}); variáveis: ${demo.variaveis.join(", ")}. Decisão com α = ${formatar(demo.alfa)}. A base real não é alterada e continua com 0 ausentes; os números abaixo só ilustram como os testes seriam lidos.`;
   preencherTabela("q-demo",
     [["Cenário"], ["Como a ausência foi gerada"], ["Ausentes", true], ["Little d²", true], ["gl", true], ["p-valor", true], ["Little"], ["Fairclough LR", true], ["gl", true], ["p-valor", true], ["Fairclough"]],
     demo.cenarios.map((c) => ({ celulas: [
@@ -356,18 +356,47 @@ async function carregarQualidade() {
       .concat([{ celulas: [`<small>Demais ${dados.zeros_negativos.length - comOcorrencia.length} colunas</small>`, "0", "0", "<small>sem zeros nem negativos.</small>"] }]));
 
   // 6. Domínio
-  preencherTabela("q-dominio", [["Regra"], ["Justificativa"], ["Violações na fonte", true], ["Violações no recorte", true]],
-    dados.dominio.regras.map((r) => ({ celulas: [`<strong>${escaparHtml(r.regra)}</strong>`, `<small>${escaparHtml(r.descricao)}</small>`, inteiro(r.violacoes_fonte), inteiro(r.violacoes_recorte)] })));
+  const regrasOrdenadas = [...dados.dominio.regras].sort((a, b) => a.coluna.localeCompare(b.coluna));
+  preencherTabela("q-dominio", [["Coluna"], ["Regra"], ["Justificativa"], [`Fora do domínio — fonte (n = ${inteiro(dup.registros)})`, true], [`Fora do domínio — recorte bruto (n = ${inteiro(rec.registros)})`, true]],
+    regrasOrdenadas.map((r, i) => ({
+      classe: i === 0 || regrasOrdenadas[i - 1].coluna !== r.coluna ? "inicio-grupo" : "",
+      celulas: [i === 0 || regrasOrdenadas[i - 1].coluna !== r.coluna ? `<code>${escaparHtml(r.coluna)}</code>` : "", `<strong>${escaparHtml(r.regra)}</strong>`, `<small>${escaparHtml(r.descricao)}</small>`, inteiro(r.violacoes_fonte), inteiro(r.violacoes_recorte)],
+    })));
   const fonteMin = Object.fromEntries(dados.dominio.minutos_fonte.map((m) => [m.minutos, m.registros]));
   preencherTabela("q-minutos", [["MIN", true], ["Prorrogações", true], ["Registros na fonte", true], ["Registros no recorte", true], ["Leitura"]],
     dados.dominio.minutos_recorte.map((m) => ({ celulas: [inteiro(m.minutos), m.prorrogacoes ?? "fora", inteiro(fonteMin[m.minutos]), inteiro(m.registros), `<small>${m.prorrogacoes === 0 ? "tempo normal: 48 min × 5 jogadores" : m.prorrogacoes ? `240 + ${m.prorrogacoes} × 25 (5 min × 5 jogadores)` : "fora do domínio 240 + 25k"}</small>`] })));
   preencherTabela("q-prorrogacao", [["Time"], ["Data"], ["Confronto"], ["MIN", true], ["Prorrogações", true], ["PTS", true]],
     dados.dominio.jogos_prorrogacao.map((j) => ({ celulas: [escaparHtml(j.time), j.data, escaparHtml(j.confronto), inteiro(j.minutos), j.prorrogacoes, inteiro(j.pontos)] })));
 
-  // 7. Outliers por coluna
+  // 7–9. Parâmetros, outliers por variável (7 métodos) e concordância
   const par = dados.parametros;
+  const pv = dados.outliers_por_variavel;
   document.getElementById("q-parametros").textContent =
-    `Z-score |z| > ${formatar(par.limiar_zscore, 0)} · IQR 1,5×IQR (Tukey) · Grubbs bilateral iterativo, α = ${formatar(par.alfa_grubbs)} · ECOD (pyod), contamination = ${formatar(par.contaminacao_ecod)}`;
+    `Z-score |z| > ${formatar(par.limiar_zscore, 0)} · IQR 1,5×IQR (Tukey) · Grubbs bilateral iterativo, α = ${formatar(par.alfa_grubbs)} · ECOD, K-NN, DBSCAN e LOF com limiares calibrados para a taxa de referência de ${formatar(par.taxa_referencia * 100)}% (a da regra de Tukey numa normal). Parâmetros por tamanho de amostra: `
+    + Object.values(pv.parametros_por_n).map((c) => `n = ${c.n}: k = ${c.knn_k}, corte K-NN ${formatar(c.knn_corte)} σ; DBSCAN ε = ${formatar(c.dbscan_eps)} σ, min_samples = ${c.dbscan_min_samples}; LOF > ${formatar(c.lof_corte)} (n_neighbors = ${c.lof_vizinhos})`).join(" · ");
+  const marcaJogo = (j) => `<span class="outlier-item">${formatar(j.valor, 0)} <small>${j.data} vs ${escaparHtml(j.adversario || "?")}</small></span>`;
+  preencherTabela("q-por-variavel",
+    [["Variável (unidade)"], ["Time"], ...pv.metodos.map((m) => [ROTULOS_METODOS[m]])],
+    pv.detalhes.map((d, i) => ({
+      classe: i % times.length === 0 ? "inicio-grupo" : "",
+      celulas: [
+        i % times.length === 0 ? `<strong>${escaparHtml(d.variavel)}</strong><small class="unidade">${escaparHtml(d.unidade)}</small>` : "",
+        escaparHtml(d.time),
+        ...pv.metodos.map((m) => `<strong>${d.metodos[m].quantidade}</strong>${d.metodos[m].jogos.map(marcaJogo).join("")}`),
+      ],
+    })));
+  const linhasConcordancia = pv.detalhes.flatMap((d) => d.concordancia.map((j) => ({
+    classe: j.total >= 4 ? "linha-destacada" : "",
+    celulas: [escaparHtml(d.variavel), escaparHtml(d.time), j.data, `${escaparHtml(j.adversario || "?")} <small>(${j.mando || "—"})</small>`, formatar(j.valor), formatar(j.z),
+      ...pv.metodos.map((m) => (j.metodos[m] ? "<span class=\"marca-sim\">✓</span>" : "<span class=\"marca-nao\">·</span>")), `<strong>${j.total} de ${pv.metodos.length}</strong>`],
+  })));
+  preencherTabela("q-concordancia",
+    [["Variável"], ["Time"], ["Data"], ["Adversário"], ["Valor", true], ["z", true], ...pv.metodos.map((m) => [ROTULOS_METODOS[m]]), ["Métodos"]],
+    linhasConcordancia.length ? linhasConcordancia : [{ celulas: ["Nenhum jogo marcado."] }]);
+  preencherTabela("q-matriz", [["Método"], ...pv.metodos.map((m) => [ROTULOS_METODOS[m], true])],
+    pv.metodos.map((a) => ({ celulas: [`<strong>${ROTULOS_METODOS[a]}</strong>`, ...pv.metodos.map((b) => (a === b ? `<strong>${pv.matriz_concordancia[a][b]}</strong>` : pv.matriz_concordancia[a][b]))] })));
+
+  // 11. Resumo nas 18 colunas
   const metodos = ["zscore", "iqr", "grubbs", "ecod"];
   const linhasOutliers = [];
   dados.outliers_por_coluna.forEach((col) => {
@@ -402,7 +431,7 @@ async function carregarQualidade() {
     graficos.outliersColuna = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
   }
 
-  // 8. Grubbs passo a passo (7 variáveis analisadas)
+  // 10. Grubbs passo a passo (7 variáveis analisadas)
   const linhasGrubbs = [];
   dados.outliers_por_coluna.filter((c) => c.analisada).forEach((col) => {
     times.forEach((time, i) => {
@@ -418,8 +447,10 @@ async function carregarQualidade() {
   });
   preencherTabela("q-grubbs", [["Variável"], ["Time"], ["Passo", true], ["n", true], ["Média", true], ["DP", true], ["Valor testado", true], ["G", true], ["G crítico", true], ["Decisão"]], linhasGrubbs);
 
-  // 9. Multivariados
+  // 12. Multivariados
   const mv = dados.outliers_multivariados;
+  document.getElementById("q-parametros-mv").textContent = "Variáveis em σ robusto ((x − mediana) ÷ (IQR/1,349)), por time. Cortes calibrados em normais de 7 dimensões: "
+    + times.map((time) => { const c = mv.times[time].parametros; return `${time} (n = ${c.n}): K-NN k = ${c.knn_k}, corte ${formatar(c.knn_corte)}; DBSCAN ε = ${formatar(c.dbscan_eps)}, min_samples = ${c.dbscan_min_samples}; LOF > ${formatar(c.lof_corte)}; ECOD > ${formatar(c.ecod_corte)}`; }).join(" · ");
   const linhasMv = [];
   times.forEach((time) => {
     const info = mv.times[time];
@@ -434,7 +465,7 @@ async function carregarQualidade() {
   });
   preencherTabela("q-multivariados", [["Time"], ["Método"], ["Jogos", true], ["Quais (data, confronto e valores)"]], linhasMv);
 
-  // 10. Teoria
+  // 7. Teoria
   document.getElementById("q-metodos").innerHTML = dados.metodos.map((m) =>
     `<div class="cartao-texto"><h4>${escaparHtml(m.nome)} <span class="etiqueta-classe">${escaparHtml(m.tipo)}</span></h4><div class="formula formula-secundaria">${escaparHtml(m.formula)}</div><dl><dt>Ideia</dt><dd>${escaparHtml(m.como)}</dd><dt>Premissas</dt><dd>${escaparHtml(m.premissas)}</dd><dt>Parâmetros</dt><dd>${escaparHtml(m.parametros)}</dd></dl></div>`).join("");
 
