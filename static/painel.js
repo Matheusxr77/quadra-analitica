@@ -10,7 +10,7 @@ function destruirGrafico(nome) {
   if (graficos[nome]) graficos[nome].destroy();
 }
 
-// Padrão para todos os gráficos: título, eixos rotulados (com unidade) e legenda.
+// Todo gráfico: título, eixos com unidade e legenda.
 function opcoesPadrao({ titulo, eixoX, eixoY, xLinear = false, beginAtZero = false, tooltip }) {
   const cor = "#8998aa";
   const opcoes = {
@@ -73,7 +73,7 @@ function construirBarras(dados) {
         const item = Object.values(dados.comparativo)[ctx.dataIndex];
         if (ctx.dataset.label === "Moda") return `Moda: ${formatarModas(item)} ${dados.unidade}`;
         const linha = `${ctx.dataset.label}: ${formatar(ctx.parsed.y)} ${dados.unidade}`;
-        // z da média do time em relação aos 149 jogos (mesma escala do gráfico padronizado).
+        // z da média do time (mesma referência do gráfico padronizado).
         const perfil = window.perfilZ && window.perfilZ.variaveis.find((v) => v.variavel === dados.variavel);
         const time = Object.keys(dados.comparativo)[ctx.dataIndex];
         if (ctx.dataset.label === "Média" && perfil && perfil.times[time]) return [linha, `z da média = ${formatar(perfil.times[time].z)}`];
@@ -112,7 +112,7 @@ function construirBoxplot(dados) {
           median: item.mediana,
           q3: item.q3,
           max: item.maximo,
-          // Bigodes = valor observado mais extremo dentro de Q1−1,5×IQR e Q3+1,5×IQR.
+          // Bigodes: valor observado mais extremo dentro dos limites de Tukey.
           whiskerMin: item.bigode_inferior,
           whiskerMax: item.bigode_superior,
           mean: item.media,
@@ -156,7 +156,7 @@ function construirHistograma(dados) {
     return;
   }
   destruirGrafico("histograma");
-  // Faixas (Freedman–Diaconis) e KDE (scipy.stats.gaussian_kde) vêm prontas do servidor.
+  // Faixas e KDE calculadas no servidor.
   const hist = dados.histograma;
   const time = document.getElementById("seletor-time").value;
   const nomesTimes = Object.keys(hist.times);
@@ -193,8 +193,7 @@ function construirHistograma(dados) {
   graficos.histograma = new Chart(elemento, { type: "bar", data: { datasets }, options: opcoes });
 }
 
-// Seções de texto vindas do servidor: interpretação (com números) e, à parte,
-// a metodologia (fórmulas, definições e convenções) — mesmo formato em todas as páginas.
+// Seções de texto do servidor: interpretação e, à parte, a metodologia.
 function renderizarSecoes(secoes, numerar = true) {
   return secoes.map((secao, i) => {
     const titulo = `<h4>${numerar ? `${i + 1}. ` : ""}${escaparHtml(secao.titulo)}</h4>`;
@@ -204,7 +203,6 @@ function renderizarSecoes(secoes, numerar = true) {
   }).join("");
 }
 
-// Comparativo: texto gerado no servidor para o time e a variável selecionados.
 function construirInterpretacao(dados) {
   const area = document.getElementById("texto-interpretacao");
   if (!area) {
@@ -262,7 +260,7 @@ async function carregarTabelaDescritiva() {
 }
 
 // ---------------------------------------------------------------------------
-// Página de Qualidade dos dados.
+// Qualidade dos dados
 // ---------------------------------------------------------------------------
 
 const CORES_METODOS = { zscore: "#55b6ff", iqr: "#6fd3a5", grubbs: "#ffad66", ecod: "#c49bff" };
@@ -305,7 +303,6 @@ async function carregarQualidade() {
   const dados = await resposta.json();
   const times = dados.times;
 
-  // Cartões-resumo
   const totalAusentes = dados.ausentes.reduce((t, l) => t + (l.fonte || 0), 0);
   const dup = dados.duplicatas.fonte;
   const violacoes = dados.dominio.regras.reduce((t, r) => t + r.violacoes_fonte, 0);
@@ -318,17 +315,17 @@ async function carregarQualidade() {
   document.getElementById("q-cartoes").innerHTML = cartoes.map(([r, v, d]) =>
     `<div class="cartao"><div class="rotulo">${r}</div><div class="valor">${v}</div><div class="detalhe">${escaparHtml(d)}</div></div>`).join("");
 
-  // 1. Ausentes por coluna
+  // Ausentes por coluna
   const celulaAusente = (q, p) => (q === null ? "—" : `${inteiro(q)} <small>(${formatar(p)}%)</small>`);
   preencherTabela("q-ausentes",
     [["Coluna"], ["Descrição"], [`Fonte completa (n = ${inteiro(dup.registros)})`, true], [`Recorte bruto (n = ${inteiro(dados.duplicatas.recorte.registros)})`, true], [`Após tratamento (n = ${inteiro(dados.duplicatas.registros_tratados)})`, true]],
     dados.ausentes.map((l) => ({ celulas: [`<code>${escaparHtml(l.coluna)}</code>`, escaparHtml(l.nome), celulaAusente(l.fonte, l.fonte_pct), celulaAusente(l.recorte, l.recorte_pct), celulaAusente(l.tratado, l.tratado_pct)] })));
 
-  // 2. Mecanismos
+  // Mecanismos de ausência
   document.getElementById("q-mecanismos").innerHTML = dados.mecanismos.map((m) =>
     cartaoTexto(`${m.sigla} — ${m.nome}`, "", [["Definição", m.definicao], ["Exemplo na NBA", m.exemplo], ["Consequência", m.consequencia]])).join("");
 
-  // 3. Testes + demonstração
+  // Testes de mecanismo e exemplo didático
   const motivo = document.getElementById("q-motivo-testes");
   if (motivo) motivo.textContent = dados.motivo_testes;
   document.getElementById("q-testes").innerHTML = dados.testes_ausencia.map((t) =>
@@ -348,7 +345,7 @@ async function carregarQualidade() {
     [["Fairclough: preditor (padronizado)"], ...demo.cenarios.flatMap((c) => [[`${c.nome}: razão de chances`, true], ["p (Wald)", true]])],
     variaveisCoef.map((v, i) => ({ celulas: [v, ...demo.cenarios.flatMap((c) => [formatar(c.fairclough.coeficientes[i].razao_chances), formatar(c.fairclough.coeficientes[i].p_valor, 4)])] })));
 
-  // 4. Duplicatas
+  // Duplicatas
   const rec = dados.duplicatas.recorte;
   preencherTabela("q-duplicatas", [["Verificação"], ["Fonte completa", true], ["Recorte do grupo", true]], [
     { celulas: ["Registros", inteiro(dup.registros), inteiro(rec.registros)] },
@@ -359,13 +356,13 @@ async function carregarQualidade() {
     { celulas: ["Removidos pelo tratamento", "—", inteiro(dados.duplicatas.removidos_no_tratamento)] },
   ]);
 
-  // 5. Zeros e negativos
+  // Zeros e negativos
   const comOcorrencia = dados.zeros_negativos.filter((z) => z.zeros || z.negativos);
   preencherTabela("q-zeros", [["Coluna"], ["Zeros", true], ["Negativos", true], ["Significado"]],
     comOcorrencia.map((z) => ({ celulas: [`<code>${escaparHtml(z.coluna)}</code><small class="unidade">${escaparHtml(z.nome)}</small>`, inteiro(z.zeros), inteiro(z.negativos), `<small>${escaparHtml(z.significado)}</small>`] }))
       .concat([{ celulas: [`<small>Demais ${dados.zeros_negativos.length - comOcorrencia.length} colunas</small>`, "0", "0", "<small>sem zeros nem negativos.</small>"] }]));
 
-  // 6. Domínio
+  // Fora de domínio
   const regrasOrdenadas = [...dados.dominio.regras].sort((a, b) => a.coluna.localeCompare(b.coluna));
   preencherTabela("q-dominio", [["Coluna"], ["Regra"], ["Justificativa"], [`Fora do domínio — fonte (n = ${inteiro(dup.registros)})`, true], [`Fora do domínio — recorte bruto (n = ${inteiro(rec.registros)})`, true]],
     regrasOrdenadas.map((r, i) => ({
@@ -378,7 +375,7 @@ async function carregarQualidade() {
   preencherTabela("q-prorrogacao", [["Time"], ["Data"], ["Confronto"], ["MIN", true], ["Prorrogações", true], ["PTS", true]],
     dados.dominio.jogos_prorrogacao.map((j) => ({ celulas: [escaparHtml(j.time), j.data, escaparHtml(j.confronto), inteiro(j.minutos), j.prorrogacoes, inteiro(j.pontos)] })));
 
-  // 7–9. Parâmetros, outliers por variável (7 métodos) e concordância
+  // Outliers por variável (7 métodos) e concordância
   const par = dados.parametros;
   const pv = dados.outliers_por_variavel;
   document.getElementById("q-parametros").textContent =
@@ -406,7 +403,7 @@ async function carregarQualidade() {
   preencherTabela("q-matriz", [["Método"], ...pv.metodos.map((m) => [ROTULOS_METODOS[m], true])],
     pv.metodos.map((a) => ({ celulas: [`<strong>${ROTULOS_METODOS[a]}</strong>`, ...pv.metodos.map((b) => (a === b ? `<strong>${pv.matriz_concordancia[a][b]}</strong>` : pv.matriz_concordancia[a][b]))] })));
 
-  // 11. Resumo nas 18 colunas
+  // Resumo nas 18 colunas
   const metodos = ["zscore", "iqr", "grubbs", "ecod"];
   const linhasOutliers = [];
   dados.outliers_por_coluna.forEach((col) => {
@@ -441,7 +438,7 @@ async function carregarQualidade() {
     graficos.outliersColuna = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
   }
 
-  // 10. Grubbs passo a passo (7 variáveis analisadas)
+  // Grubbs passo a passo
   const linhasGrubbs = [];
   dados.outliers_por_coluna.filter((c) => c.analisada).forEach((col) => {
     times.forEach((time, i) => {
@@ -457,7 +454,7 @@ async function carregarQualidade() {
   });
   preencherTabela("q-grubbs", [["Variável"], ["Time"], ["Passo", true], ["n", true], ["Média", true], ["DP", true], ["Valor testado", true], ["G", true], ["G crítico", true], ["Decisão"]], linhasGrubbs);
 
-  // 12. Multivariados
+  // Outliers multivariados
   const mv = dados.outliers_multivariados;
   document.getElementById("q-parametros-mv").textContent = "Variáveis em σ robusto ((x − mediana) ÷ (IQR/1,349)), por time. Cortes calibrados em normais de 7 dimensões: "
     + times.map((time) => { const c = mv.times[time].parametros; return `${time} (n = ${c.n}): K-NN k = ${c.knn_k}, corte ${formatar(c.knn_corte)}; DBSCAN ε = ${formatar(c.dbscan_eps)}, min_samples = ${c.dbscan_min_samples}; LOF > ${formatar(c.lof_corte)}; ECOD > ${formatar(c.ecod_corte)}`; }).join(" · ");
@@ -475,7 +472,7 @@ async function carregarQualidade() {
   });
   preencherTabela("q-multivariados", [["Time"], ["Método"], ["Jogos", true], ["Quais (data, confronto e valores)"]], linhasMv);
 
-  // 7. Teoria
+  // Teoria dos métodos
   document.getElementById("q-metodos").innerHTML = dados.metodos.map((m) =>
     `<div class="cartao-texto"><h4>${escaparHtml(m.nome)} <span class="etiqueta-classe">${escaparHtml(m.tipo)}</span></h4><div class="formula formula-secundaria">${escaparHtml(m.formula)}</div><dl><dt>Ideia</dt><dd>${escaparHtml(m.como)}</dd><dt>Premissas</dt><dd>${escaparHtml(m.premissas)}</dd><dt>Parâmetros</dt><dd>${escaparHtml(m.parametros)}</dd></dl></div>`).join("");
 
@@ -579,7 +576,7 @@ carregarDicionario();
 carregarTabelaDescritiva();
 
 // ---------------------------------------------------------------------------
-// Páginas de Assimetria, CV e IQR: quadro-resumo, detalhe, gráfico e textos.
+// Assimetria, CV e IQR
 // ---------------------------------------------------------------------------
 
 function pct(valor) {
@@ -733,7 +730,7 @@ async function carregarMedida() {
 carregarMedida();
 
 // ---------------------------------------------------------------------------
-// Comparativo: gráfico de barras padronizado (z-score) e resposta do enunciado.
+// Comparativo: gráfico em z-score
 // ---------------------------------------------------------------------------
 
 async function carregarPerfilZ() {

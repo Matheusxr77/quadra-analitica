@@ -54,8 +54,7 @@ def test_base_fisica_e_dicionario_respeitam_escopo_do_grupo():
 
     raiz = Path(__file__).parents[1] / "dados"
     caminho = raiz / "estatisticas_times_selecionados.csv"
-    # Num clone limpo o CSV derivado não existe: o repositório deve gerá-lo
-    # no caminho padrão (ao lado da fonte) ao carregar os dados.
+    # Clone limpo: o repositório gera o CSV derivado ao lado da fonte.
     RepositorioDados(raiz / "stats_times_regular_final.csv").obter_dados()
     assert caminho.exists()
     assert not (raiz / "dados").exists()
@@ -204,7 +203,7 @@ def test_apis_de_assimetria_cv_e_iqr():
         assert len(corpo["linhas"]) == 14
         assert len(corpo["secoes"]) >= 6
         for secao in corpo["secoes"]:
-            # Toda seção tem interpretação ou metodologia (fórmulas e definições ficam só na metodologia).
+            # Fórmulas e definições ficam só na metodologia.
             assert secao["titulo"] and (secao["paragrafos"] or secao["metodologia"])
             assert set(secao) >= {"titulo", "paragrafos", "metodologia"}
         texto = " ".join(p for s in corpo["secoes"] for p in s["paragrafos"])
@@ -305,8 +304,7 @@ def test_ecod_proprio_igual_ao_pyod_quando_disponivel():
         obtido = ecod_por_proporcao(coluna)
         assert np.allclose(obtido["scores"], esperado.decision_scores_)
         assert (obtido["rotulos"] == esperado.labels_.astype(bool)).all()
-    # Em várias dimensões as caudas por coluna coincidem; o score final segue o
-    # artigo (máximo das somas), enquanto o pyod soma os máximos por coluna.
+    # Em d > 1 só as caudas coincidem: o score segue o artigo (máximo das somas), o pyod soma os máximos.
     matriz = gerador.normal(size=(60, 4))
     modelo = ecod_pyod().fit(matriz)
     componentes = ecod_componentes(matriz)
@@ -515,7 +513,7 @@ def test_outliers_por_variavel_lista_jogos_e_concordancia():
     # O jogo de 15 tocos dos Mavericks é marcado por quase todos os métodos.
     blk = next(d for d in pv["detalhes"] if d["variavel"] == "BLK" and d["time"] == "Dallas Mavericks")
     assert blk["concordancia"][0]["valor"] == 15 and blk["concordancia"][0]["total"] >= 5
-    # O motivo comum ("0 ausentes") aparece uma vez; cada teste traz só o motivo específico.
+    # Motivo comum uma vez; em cada teste, só o específico.
     assert "0 valores ausentes" in corpo["motivo_testes"]
     for teste in corpo["testes_ausencia"]:
         assert len(teste["paragrafos"]) == 2

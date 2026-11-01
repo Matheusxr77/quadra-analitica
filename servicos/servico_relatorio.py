@@ -1,4 +1,4 @@
-"""Regras que atendem às solicitações feitas pelas páginas do relatório."""
+"""Casos de uso das páginas do relatório."""
 
 from typing import Any
 
@@ -21,7 +21,7 @@ from infraestrutura.repositorio_dados import RepositorioDados
 
 
 class ServicoRelatorio:
-    """Valida as escolhas do usuário e pede os dados e cálculos necessários."""
+    """Valida as escolhas do usuário e chama o domínio."""
 
     def __init__(self, repositorio: RepositorioDados) -> None:
         self._repositorio = repositorio
@@ -57,8 +57,7 @@ class ServicoRelatorio:
         return calcular_dicionario(self._obter_dados())
 
     def qualidade(self) -> dict[str, Any]:
-        # Os dados são estáticos durante a execução e o diagnóstico (ECOD, LOF,
-        # EM do teste de Little) leva ~0,5 s: calcula uma vez e reaproveita.
+        # Dados estáticos e cálculo custoso: calcula uma vez.
         if self._qualidade is None:
             fonte, recorte = self._repositorio.obter_bases_brutas()
             self._qualidade = calcular_qualidade(self._obter_dados(), fonte, recorte)

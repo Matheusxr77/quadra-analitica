@@ -1,9 +1,6 @@
-"""Diagnóstico de qualidade dos dados: ausentes, especiais, domínio e outliers.
+"""Diagnóstico de qualidade: ausentes, valores especiais, domínio e outliers (domínio puro).
 
-Domínio puro (não conhece Flask). Recebe a base tratada usada nos cálculos e
-as bases brutas (fonte completa e recorte do grupo antes de qualquer limpeza)
-para que duplicatas e ausentes sejam medidos antes do tratamento. Os textos
-são gerados a partir dos números calculados.
+Duplicatas e ausentes são medidos nas bases brutas, antes do tratamento.
 """
 
 from typing import Any
@@ -38,9 +35,7 @@ SEMENTE_DEMONSTRACAO = 42
 MINUTOS_REGULAMENTARES = 240  # 48 min × 5 jogadores em quadra
 MINUTOS_POR_PRORROGACAO = 25  # 5 min × 5 jogadores
 
-# Estatísticas de box-score: quantidades medidas no jogo. Ficam de fora
-# identificadores, o resultado binário (WL), os acumulados da temporada
-# (W, L, W_PCT) e MIN, cujo domínio é discreto e tratado à parte.
+# Box-score: sem identificadores, WL, acumulados (W, L, W_PCT) e MIN (domínio próprio).
 COLUNAS_BOX_SCORE = [
     "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT",
     "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "PTS",
@@ -164,11 +159,7 @@ def contar_zeros_e_negativos(recorte: pd.DataFrame) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def classificar_minutos(minutos: float) -> int | None:
-    """Número de prorrogações implicado por MIN; None se fora do domínio.
-
-    MIN soma os minutos de todos os jogadores: 48 min × 5 = 240 no tempo
-    normal e +5 min × 5 = +25 por prorrogação. Logo, o domínio é 240 + 25k.
-    """
+    """Prorrogações implicadas por MIN (240 + 25·k); None se fora do domínio."""
     if pd.isna(minutos):
         return None
     excesso = float(minutos) - MINUTOS_REGULAMENTARES
@@ -259,8 +250,7 @@ def verificar_dominio(fonte: pd.DataFrame, recorte: pd.DataFrame) -> dict[str, A
         }
         for _, linha in prorrogados.sort_values(["TEAM_NAME", "_data"]).iterrows()
     ]
-    # Efeito da prorrogação na pontuação: média de PTS com e sem prorrogação
-    # e quantos outliers de Tukey em PTS são jogos prorrogados.
+    # PTS com e sem prorrogação e outliers de PTS em jogos prorrogados.
     pontos = _numerico(recorte, "PTS")
     efeito = {}
     for time in TIMES_ANALISADOS:
@@ -307,7 +297,7 @@ def _jogo_detalhado(linha: pd.Series, coluna: str) -> dict[str, Any]:
 
 
 def _univariados(serie: pd.Series) -> dict[str, Any]:
-    """Resumo por coluna (18 colunas): Z-score, IQR, Grubbs e ECOD."""
+    """Z-score, IQR, Grubbs e ECOD de uma coluna (resumo das 18 colunas)."""
     serie = serie.dropna().astype(float)
     desvio = serie.std(ddof=1)
     z = (serie - serie.mean()) / desvio if desvio > 0 else serie * 0
@@ -419,13 +409,12 @@ def _detalhe_variavel(dados: pd.DataFrame, time: str, variavel: str) -> dict[str
 
 
 def outliers_por_variavel(dados: pd.DataFrame) -> dict[str, Any]:
-    """7 variáveis × 2 times × 7 métodos, com jogos e concordância."""
+    """7 variáveis × 2 times × 7 métodos, com jogos e matriz de concordância."""
     detalhes = [
         _detalhe_variavel(dados, time, variavel)
         for variavel in VARIAVEIS_ANALISADAS for time in TIMES_ANALISADOS
     ]
-    # Matriz de concordância: em quantos pares (jogo, variável) cada dupla de
-    # métodos marcou o mesmo jogo. A diagonal é o total de cada método.
+    # Pares (jogo, variável) marcados por cada dupla de métodos; diagonal = total do método.
     matriz = {
         a: {b: int(sum((d["_mascaras"][a] & d["_mascaras"][b]).sum() for d in detalhes)) for b in METODOS_DETALHE}
         for a in METODOS_DETALHE
@@ -558,11 +547,8 @@ def _logistica(x: np.ndarray, y: np.ndarray, max_iter: int = 100):
 def teste_fairclough(
     indicador: np.ndarray, preditores: np.ndarray, nomes: list[str]
 ) -> dict[str, Any]:
-    """Regressão logística do indicador de ausência sobre variáveis observadas.
-
-    H₀ (compatível com MCAR): nenhum preditor altera a chance de ausência.
-    Teste global pela razão de verossimilhança contra o modelo só com
-    intercepto; coeficientes individuais pelo teste de Wald.
+    """Logística do indicador de ausência sobre as observadas; teste global por razão de verossimilhança,
+    coeficientes por Wald.
     """
     y = indicador.astype(float)
     desvio = preditores.std(axis=0)
@@ -604,8 +590,7 @@ def demonstrar_testes_ausencia(dados: pd.DataFrame) -> dict[str, Any]:
     # MCAR: toda linha tem a mesma probabilidade de perder PTS.
     mcar = np.zeros(n, dtype=bool)
     mcar[gerador.choice(n, size=round(proporcao * n), replace=False)] = True
-    # MAR: a chance de perder PTS cresce com FG3M (observada); nada depende do
-    # próprio PTS além do que FG3M já explica.
+    # MAR: a chance de perder PTS cresce com FG3M (observada).
     fg3m = base[:, colunas.index("FG3M")]
     escore = (fg3m - fg3m.mean()) / fg3m.std()
     probabilidade = 1 / (1 + np.exp(-(np.log(proporcao / (1 - proporcao)) + 1.5 * escore)))
@@ -637,7 +622,7 @@ def demonstrar_testes_ausencia(dados: pd.DataFrame) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Teoria (estática) e interpretação (a partir dos números)
+# Teoria e textos de interpretação
 # ---------------------------------------------------------------------------
 
 MECANISMOS = [
@@ -756,7 +741,7 @@ TESTES_AUSENCIA = [
 
 
 def _metodos_outlier(calibracao: dict[str, Any], calibracao_7d: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Teoria de cada detector, com os parâmetros efetivamente usados."""
+    """Teoria de cada detector com os parâmetros usados."""
     taxa = _n(TAXA_REFERENCIA * 100)
     n = calibracao["n"]
     multi = ""
@@ -831,7 +816,7 @@ NOMES_METODOS = {
 
 
 def _secao(titulo: str, paragrafos: list[str], metodologia: list[str] | None = None) -> dict[str, Any]:
-    """`paragrafos` = interpretação (sempre com números calculados); `metodologia` = método e definições."""
+    """`paragrafos`: interpretação, sempre com números; `metodologia`: fórmulas e convenções."""
     return {"titulo": titulo, "metodologia": metodologia or [], "paragrafos": paragrafos}
 
 

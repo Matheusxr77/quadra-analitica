@@ -1,8 +1,8 @@
-"""Erros próprios da aplicação, com mensagens seguras para o usuário."""
+"""Erros da aplicação com mensagens seguras para o usuário."""
 
 
 class ErroAplicacao(Exception):
-    """Representa um problema conhecido, como uma escolha inválida."""
+    """Problema conhecido, como uma escolha inválida."""
 
     def __init__(self, mensagem: str, codigo_http: int = 400) -> None:
         super().__init__(mensagem)
@@ -11,7 +11,7 @@ class ErroAplicacao(Exception):
 
 
 class ErroDados(ErroAplicacao):
-    """Indica que a base não existe ou não tem o formato esperado."""
+    """Base ausente ou fora do formato esperado."""
 
     def __init__(self, mensagem: str) -> None:
         super().__init__(mensagem, 503)

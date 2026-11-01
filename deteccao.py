@@ -1,12 +1,7 @@
-"""Detectores de outliers implementados só com numpy, scipy e scikit-learn.
+"""Detectores de outliers com numpy, scipy e scikit-learn.
 
-Domínio puro (não conhece Flask). Reúne:
-- Grubbs bilateral iterativo (valor crítico pela distribuição t);
-- ECOD conforme Li et al. (2022), sem pyod;
-- K-NN, DBSCAN e LOF com limiares CALIBRADOS: cada limiar é escolhido para
-  que, em dados normais com o mesmo n e a mesma dimensão, o método marque a
-  mesma proporção esperada da regra de Tukey (P(|z| > 2,698) ≈ 0,70%). Assim
-  nenhum parâmetro é um número solto e os métodos ficam comparáveis.
+Grubbs iterativo, ECOD (Li et al., 2022) e K-NN, DBSCAN e LOF com limiares calibrados
+para marcar, em dados normais, a mesma proporção da regra de Tukey (≈ 0,70%).
 """
 
 import json
@@ -44,12 +39,7 @@ def valor_critico_grubbs(n: int, alfa: float = ALFA_GRUBBS) -> float:
 
 
 def grubbs_iterativo(serie: pd.Series, alfa: float = ALFA_GRUBBS) -> dict[str, Any]:
-    """Teste de Grubbs bilateral aplicado repetidamente.
-
-    A cada passo testa o valor mais distante da média (H₀: não há outlier);
-    se G > G crítico, ele é removido e o teste recomeça com n − 1 valores.
-    Para no primeiro passo não significativo.
-    """
+    """Grubbs bilateral iterativo: remove o valor mais distante da média enquanto G > G crítico."""
     restante = serie.dropna().astype(float)
     passos, indices = [], []
     while len(restante) >= 3:
@@ -104,10 +94,7 @@ def ecod_componentes(matriz: np.ndarray) -> dict[str, np.ndarray]:
 
 
 def ecod_por_proporcao(matriz: np.ndarray, proporcao: float = TAXA_REFERENCIA) -> dict[str, Any]:
-    """Rótulos do ECOD marcando a proporção dada (mesma regra do pyod).
-
-    Limiar = percentil 100·(1 − proporção) dos scores; marcado se score > limiar.
-    """
+    """Marca a proporção dada dos maiores scores (score > percentil 100·(1 − proporção)), como o pyod."""
     scores = ecod_componentes(matriz)["scores"]
     limiar = float(np.percentile(scores, 100 * (1 - proporcao)))
     return {"scores": scores, "limiar": limiar, "rotulos": scores > limiar}
@@ -118,7 +105,7 @@ def ecod_por_proporcao(matriz: np.ndarray, proporcao: float = TAXA_REFERENCIA) -
 # ---------------------------------------------------------------------------
 
 def padronizar_robusto(matriz: np.ndarray) -> np.ndarray:
-    """(x − mediana) / (IQR/1,349): escala robusta, comparável a uma N(0, 1)."""
+    """(x − mediana) / (IQR/1,349)."""
     x = np.asarray(matriz, dtype=float)
     if x.ndim == 1:
         x = x.reshape(-1, 1)
@@ -130,7 +117,7 @@ def padronizar_robusto(matriz: np.ndarray) -> np.ndarray:
 
 
 def vizinhos_knn(n: int) -> int:
-    """k = arredondamento de √n (regra usual para k em métodos de vizinhança)."""
+    """k = round(√n)."""
     return max(2, int(round(sqrt(n))))
 
 
@@ -141,7 +128,7 @@ def minimo_dbscan(dimensao: int) -> int:
 
 def score_knn(z: np.ndarray, k: int) -> np.ndarray:
     distancias, _ = NearestNeighbors(n_neighbors=k + 1).fit(z).kneighbors(z)
-    return distancias[:, -1]  # a coluna 0 é o próprio ponto
+    return distancias[:, -1]  # coluna 0 = o próprio ponto
 
 
 def score_lof(z: np.ndarray) -> np.ndarray:
@@ -155,11 +142,10 @@ def ruido_dbscan(z: np.ndarray, eps: float, minimo: int) -> np.ndarray:
 
 @lru_cache(maxsize=16)
 def calibrar(n: int, dimensao: int = 1) -> dict[str, Any]:
-    """Limiares que, em N(0, I) com o mesmo n e dimensão, marcam ≈ TAXA_REFERENCIA.
+    """Limiares que marcam ≈ TAXA_REFERENCIA em N(0, I) com o mesmo n e dimensão.
 
-    Monte Carlo com semente fixa (resultado reprodutível). K-NN, LOF e ECOD:
-    quantil (1 − taxa) do score sob normalidade. DBSCAN: menor ε cuja taxa de
-    ruído sob normalidade é ≤ taxa (busca binária; a taxa cai quando ε cresce).
+    Monte Carlo com semente fixa. K-NN, LOF e ECOD: quantil (1 − taxa) do score.
+    DBSCAN: menor ε com taxa de ruído ≤ taxa (busca binária).
     """
     gerador = np.random.default_rng(SEMENTE_CALIBRACAO + 1000 * dimensao + n)
     amostras = gerador.standard_normal((REPETICOES_CALIBRACAO, n, dimensao))
@@ -209,17 +195,13 @@ def _tabela_calibracao() -> dict[str, dict[str, Any]]:
 
 
 def obter_calibracao(n: int, dimensao: int = 1) -> dict[str, Any]:
-    """Usa a tabela pré-calculada (mesma semente) ou calibra na hora.
-
-    A calibração leva vários segundos; a tabela evita esse custo na primeira
-    requisição em produção. `python -m deteccao` a regenera.
-    """
+    """Lê a tabela pré-calculada (evita segundos de cálculo na 1ª requisição) ou calibra na hora."""
     registro = _tabela_calibracao().get(f"{n}x{dimensao}")
     return dict(registro) if registro else calibrar(n, dimensao)
 
 
 def detectar(matriz: np.ndarray) -> dict[str, Any]:
-    """Aplica K-NN, DBSCAN, LOF (calibrados) e ECOD a uma matriz n × d."""
+    """K-NN, DBSCAN, LOF e ECOD numa matriz n × d."""
     x = np.asarray(matriz, dtype=float)
     if x.ndim == 1:
         x = x.reshape(-1, 1)
@@ -249,7 +231,7 @@ def detectar(matriz: np.ndarray) -> dict[str, Any]:
 
 
 def gerar_tabela_calibracao(tamanhos: tuple[int, ...] = (74, 75), dimensoes: tuple[int, ...] = (1, 7)) -> Path:
-    """Recalcula e grava a tabela de calibração usada em produção."""
+    """Recalcula e grava dados/calibracao_outliers.json."""
     entradas = {f"{n}x{d}": calibrar(n, d) for n in tamanhos for d in dimensoes}
     ARQUIVO_CALIBRACAO.write_text(json.dumps({
         "descricao": "Limiares de K-NN, DBSCAN, LOF e ECOD calibrados sob normalidade (ver deteccao.py).",

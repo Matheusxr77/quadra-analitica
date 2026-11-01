@@ -1,4 +1,4 @@
-"""Endereços acessados pelo navegador e pelas requisições da página."""
+"""Rotas das páginas e da API."""
 
 from flask import Blueprint, jsonify, render_template, request
 

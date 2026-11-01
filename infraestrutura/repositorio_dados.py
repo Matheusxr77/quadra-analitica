@@ -1,3 +1,5 @@
+"""Leitura, tipagem e cache da base usada na análise."""
+
 from pathlib import Path
 from threading import Lock
 
@@ -9,11 +11,8 @@ from infraestrutura.preparador_dados import gerar_base_dos_times
 
 
 
-"""Lê e prepara a base que será usada pela análise."""
-
-
 class RepositorioDados:
-    """Mantém os dados prontos em memória e entrega uma cópia para cada uso."""
+    """Carrega a base uma vez e entrega cópias."""
 
     colunas_obrigatorias = {
         "TEAM_NAME",
@@ -40,7 +39,7 @@ class RepositorioDados:
         self._bloqueio = Lock()
 
     def obter_dados(self) -> pd.DataFrame:
-        """Prepara os dados no primeiro uso e devolve uma cópia segura."""
+        """Base tratada (carregada no primeiro uso)."""
         if self._dados is None:
             with self._bloqueio:
                 if self._dados is None:
@@ -48,12 +47,8 @@ class RepositorioDados:
         return self._dados.copy(deep=True)
 
     def obter_bases_brutas(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Fonte completa e recorte do grupo exatamente como estão nos CSVs.
-
-        Usadas só no diagnóstico de qualidade: duplicatas e ausentes precisam
-        ser medidos antes da tipagem e da deduplicação feitas em _carregar.
-        """
-        self.obter_dados()  # garante que o recorte derivado exista
+        """Fonte completa e recorte do grupo sem tratamento, para medir duplicatas e ausentes."""
+        self.obter_dados()  # gera o recorte, se ainda não existir
         with self._bloqueio:
             if self._brutas is None:
                 try:
@@ -67,7 +62,7 @@ class RepositorioDados:
         return fonte.copy(deep=True), recorte.copy(deep=True)
 
     def recarregar(self) -> None:
-        """Lê novamente a fonte, regenera a base filtrada e atualiza o cache."""
+        """Relê a fonte, regenera o recorte e limpa os caches."""
         with self._bloqueio:
             self._dados = self._carregar()
             self._brutas = None

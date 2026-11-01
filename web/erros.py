@@ -1,4 +1,4 @@
-"""Transforma erros em respostas claras sem revelar detalhes internos."""
+"""Respostas de erro padronizadas, sem detalhes internos."""
 
 import logging
 from uuid import uuid4

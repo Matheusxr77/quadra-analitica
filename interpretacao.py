@@ -1,10 +1,4 @@
-"""Quadros-resumo e interpretação textual de Assimetria, CV e IQR.
-
-Domínio puro (não conhece Flask). Cada função monta, a partir da tabela
-descritiva, o quadro variáveis × times, as linhas de detalhe e os textos de
-interpretação — um bloco por subitem do enunciado — sempre citando os números
-calculados, nunca frases fixas.
-"""
+"""Textos de interpretação de Assimetria, CV, IQR e Comparativo, gerados a partir dos números (domínio puro)."""
 
 from math import sqrt
 from typing import Any
@@ -25,11 +19,8 @@ from analise import (
     referencia_amplitude_iqr,
 )
 
-# Abaixo deste |G1| o sinal é ruído: G1 e Bowley podem discordar sem que haja
-# divergência real de formato.
+# Abaixo deste |G1| o sinal é tratado como ruído.
 LIMITE_SINAL_RELEVANTE = 0.2
-# Para uma normal com n ≈ 75, amplitude/IQR fica em torno de 3,5–4.
-LIMITE_AMPLITUDE_IQR = 4.0
 LIMITE_DP_INFLADO = 1.10  # DP > 10% acima do σ robusto (IQR/1,349)
 
 
@@ -106,7 +97,7 @@ UNIDADE_CURTA = {
 
 
 def _time(time: str, maiuscula: bool = False) -> str:
-    """'os Mavericks' — nomes de times da NBA concordam no plural."""
+    """'os Mavericks': nomes de times concordam no plural."""
     return f"{'Os' if maiuscula else 'os'} {_curto(time)}"
 
 
@@ -115,7 +106,7 @@ def _dos(time: str) -> str:
 
 
 def _v(valor: float | None) -> str:
-    """Contagens inteiras sem casas decimais no texto corrido; demais com 2."""
+    """Contagens inteiras sem casas decimais; demais valores com 2."""
     if valor is None:
         return "—"
     return _n(valor, 0) if float(valor).is_integer() else _n(valor)
@@ -138,7 +129,7 @@ def _lista(itens: list[str]) -> str:
 
 
 def _contrair(texto: str) -> str:
-    """Contrações obrigatórias geradas pela montagem das frases ('por o jogo' → 'pelo jogo')."""
+    """Corrige contrações geradas na montagem ('por o jogo' → 'pelo jogo')."""
     for antes, depois in ((" por o jogo", " pelo jogo"), (" por os jogos", " pelos jogos"),
                           (" de o jogo", " do jogo"), (" em o jogo", " no jogo")):
         texto = texto.replace(antes, depois)
@@ -146,7 +137,7 @@ def _contrair(texto: str) -> str:
 
 
 def _secao(titulo: str, paragrafos: list[str], metodologia: list[str] | None = None) -> dict[str, Any]:
-    """Seção de texto: `paragrafos` = interpretação (sempre com números); `metodologia` = método."""
+    """`paragrafos`: interpretação, sempre com números; `metodologia`: fórmulas e convenções."""
     return {
         "titulo": titulo,
         "metodologia": [_contrair(m) for m in (metodologia or [])],
@@ -228,7 +219,6 @@ def _textos_assimetria(tabela) -> list[dict[str, Any]]:
         ],
     )]
 
-    # Direção
     total = len(pares)
     positivos = sum(1 for _, _, i in pares if i["assimetria"] > 0)
     perto_de_zero = sum(1 for _, _, i in pares if abs(i["assimetria"]) < LIMITE_SINAL_RELEVANTE)
@@ -264,7 +254,6 @@ def _textos_assimetria(tabela) -> list[dict[str, Any]]:
         ],
     ))
 
-    # Intensidade
     por_classe: dict[str, list] = {}
     for g, t, i in pares:
         por_classe.setdefault(i["intensidade_assimetria"], []).append((g, t, i))
@@ -296,7 +285,6 @@ def _textos_assimetria(tabela) -> list[dict[str, Any]]:
         ],
     ))
 
-    # Coeficiente × gráficos
     concordam, divergem = 0, []
     for g, t, i in pares:
         sinais = {_sinal(i["assimetria"]), _sinal(i["bowley"]), _sinal(i["media"] - i["mediana"])}
@@ -340,7 +328,6 @@ def _textos_assimetria(tabela) -> list[dict[str, Any]]:
         ],
     ))
 
-    # Comparação entre variáveis e times
     ordem = sorted(tabela, key=lambda g: _media_times(g, "assimetria", absoluto=True), reverse=True)
     mesma = [g for g in tabela if len({_sinal(g["times"][t]["assimetria"]) for t in TIMES_ANALISADOS}) == 1]
     opostas = [g for g in tabela if g not in mesma]
@@ -367,7 +354,6 @@ def _textos_assimetria(tabela) -> list[dict[str, Any]]:
         paragrafos.append(texto + ("" if opostas else "."))
     secoes.append(_secao("Comparação entre variáveis e entre times", paragrafos))
 
-    # Implicação prática
     distancia = [
         (abs(i["media"] - i["mediana"]) / i["desvio_padrao"], g, t, i)
         for g, t, i in pares if i["desvio_padrao"] > 0
@@ -422,7 +408,7 @@ def _classe_cv(cv: float | None) -> str:
 
 
 def _classe_cv_item(item: dict[str, Any]) -> str:
-    """Faixas de CV; em contagens pequenas, a régua é o piso de Poisson."""
+    """Faixa de CV; com média < MEDIA_MINIMA_CV, compara com o piso de Poisson."""
     if item["media"] < MEDIA_MINIMA_CV and item["cv_poisson_ref"]:
         excesso = item["cv_percentual"] - item["cv_poisson_ref"]
         return "compatível com a escala" if excesso < 10 else "acima do piso da escala"

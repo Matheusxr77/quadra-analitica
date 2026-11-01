@@ -14,7 +14,7 @@ from web.rotas import criar_blueprint
 
 
 def criar_aplicacao(configuracao: Configuracao | None = None) -> Flask:
-    """Monta a aplicação e liga suas partes sem carregar dados ainda."""
+    """Monta a aplicação sem carregar os dados (carregamento preguiçoso)."""
     configuracao = configuracao or Configuracao.a_partir_das_variaveis()
     aplicacao = Flask(__name__)
     aplicacao.config.from_mapping(

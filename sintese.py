@@ -1,9 +1,4 @@
-"""Síntese do relatório e resposta sobre o z-score no gráfico de barras.
-
-Domínio puro (não conhece Flask). Junta a tabela descritiva, o perfil em
-z-score e o diagnóstico de qualidade numa leitura final, sempre citando os
-números calculados.
-"""
+"""Síntese do relatório e resposta sobre o z-score no gráfico de barras (domínio puro)."""
 
 from typing import Any
 

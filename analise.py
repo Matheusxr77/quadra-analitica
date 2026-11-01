@@ -1,8 +1,4 @@
-"""Funções que organizam os dados e calculam as estatísticas do dashboard.
-
-Este arquivo não depende das páginas. Assim, os cálculos podem ser testados e
-alterados sem misturar estatística com HTML ou JavaScript.
-"""
+"""Cálculos estatísticos do relatório (domínio puro, sem Flask)."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -83,13 +79,8 @@ METADADOS_CAMPOS = {
 
 
 def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
-    """Garante percentuais em fração, no intervalo [0, 1].
-
-    Na fonte atual todos os percentuais já estão em fração (a página de
-    Qualidade confere isso). A regra é defensiva: se uma atualização trouxer
-    valores acima de 1 em milésimos de proporção, dividi-los por 1000 os põe
-    na mesma escala. O que ainda ficar fora de [0, 1] vira ausente para não
-    contaminar os resumos.
+    """Percentuais em fração: valores > 1 (milésimos) são divididos por 1000; o que ficar fora de [0, 1] vira
+    ausente.
     """
     serie = pd.to_numeric(coluna, errors="coerce")
     serie = serie.where(serie <= 1, serie / 1000)
@@ -97,7 +88,7 @@ def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
 
 
 def carregar_dados() -> pd.DataFrame:
-    """Carrega os dados usando o mesmo caminho adotado pela aplicação."""
+    """Carrega a base tratada pelo caminho padrão."""
     from infraestrutura.repositorio_dados import RepositorioDados
 
     return RepositorioDados(CAMINHO_DADOS).obter_dados()
@@ -122,7 +113,7 @@ def _intensidade_assimetria(valor: float) -> str:
 
 
 def _direcao_assimetria(valor: float) -> str:
-    """A direção vem só do sinal do coeficiente, como pede o enunciado."""
+    """Direção pelo sinal do coeficiente."""
     if valor > 0:
         return "à direita (positiva)"
     if valor < 0:
@@ -140,17 +131,13 @@ def _skew(serie: pd.Series) -> float:
 
 
 def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
-    """Calcula as medidas estatísticas de uma variável.
-
-    O desvio padrão usa n - 1 porque os jogos observados representam uma
-    amostra do comportamento que pode ocorrer em outras partidas.
-    """
+    """Medidas descritivas de uma série; DP e variância amostrais (n − 1)."""
     quartil_1 = float(serie.quantile(0.25, interpolation="linear"))
     quartil_3 = float(serie.quantile(0.75, interpolation="linear"))
     media = float(serie.mean())
     desvio = float(serie.std(ddof=1))
     contagens = serie.value_counts()
-    # Se nenhum valor se repete, a série é amodal: todos seriam "moda".
+    # Sem valores repetidos: amodal.
     amodal = contagens.empty or int(contagens.max()) == 1
     modas = [] if amodal else sorted(
         float(valor) for valor in contagens[contagens == contagens.max()].index
@@ -161,8 +148,7 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
     limite_superior = quartil_3 + 1.5 * (quartil_3 - quartil_1)
     mascara_atipicos = (serie < limite_inferior) | (serie > limite_superior)
     valores_atipicos = serie[mascara_atipicos].sort_values()
-    # Bigodes de Tukey: vão até o valor OBSERVADO mais extremo que ainda está
-    # dentro dos limites, e não até os limites em si.
+    # Bigodes: valor observado mais extremo dentro dos limites de Tukey.
     dentro = serie[~mascara_atipicos]
     cv = desvio / media if media > 0 else None
     iqr = quartil_3 - quartil_1
@@ -219,7 +205,7 @@ def _estatisticas_de_serie(serie: pd.Series) -> dict[str, Any]:
 def _detalhar_outliers(
     dados: pd.DataFrame, serie: pd.Series, outliers_idx: pd.Index
 ) -> list[dict[str, Any]]:
-    """Identifica em quais jogos ocorreram os valores atípicos."""
+    """Valor, data, adversário e prorrogações de cada outlier."""
     detalhes = []
     for indice in outliers_idx:
         linha = dados.loc[indice]
@@ -247,7 +233,7 @@ def erro_padrao_g1(n: int) -> float:
 
 @lru_cache(maxsize=8)
 def referencia_amplitude_iqr(n: int) -> dict[str, float]:
-    """Distribuição de amplitude/IQR em amostras normais de tamanho n (simulação, semente fixa)."""
+    """Mediana e percentil 95 de amplitude/IQR em amostras normais de tamanho n (simulação, semente fixa)."""
     amostras = np.random.default_rng(1000 + n).standard_normal((4000, n))
     q1, q3 = np.quantile(amostras, [0.25, 0.75], axis=1)
     razao = (amostras.max(axis=1) - amostras.min(axis=1)) / (q3 - q1)
@@ -281,18 +267,13 @@ def _comparar_times_cache(chave: tuple) -> dict[str, Any]:
         resultado[nome] = {
             "diferenca": observada,
             "ic95": [baixo, alto],
-            # Relevante só se o intervalo de 95% não contém zero.
             "relevante": bool(baixo > 0 or alto < 0),
         }
     return resultado
 
 
 def comparar_times(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
-    """Diferença de CV e de IQR entre os times (A − B) com IC 95% por bootstrap.
-
-    Com ≈ 75 jogos por time, diferenças pequenas de CV ou IQR aparecem só por
-    acaso; o intervalo diz se a diferença observada se distingue de zero.
-    """
+    """Diferença (A − B) de CV e IQR com IC 95% por bootstrap; relevante se o IC não contém zero."""
     a, b = (tuple(_valores(dados, time, variavel).tolist()) for time in TIMES_ANALISADOS)
     return {"times": TIMES_ANALISADOS, **_comparar_times_cache((variavel, a, b))}
 
@@ -311,7 +292,7 @@ def _estatisticas_com_jogos(
 
 
 def calcular_tabela_descritiva(dados: pd.DataFrame) -> dict[str, Any]:
-    """Tabela completa de medidas descritivas: cada variável × cada time."""
+    """Medidas descritivas de cada variável × time."""
     variaveis = []
     for variavel in VARIAVEIS_ANALISADAS:
         times = {}
@@ -328,11 +309,7 @@ def calcular_tabela_descritiva(dados: pd.DataFrame) -> dict[str, Any]:
 
 
 def _largura_freedman_diaconis(serie: pd.Series) -> int:
-    """h = 2·IQR·n^(-1/3), arredondado para inteiro ≥ 1.
-
-    As sete variáveis são contagens inteiras; uma faixa fracionária deixaria
-    faixas vazias alternadas e distorceria o formato do histograma.
-    """
+    """h = 2·IQR·n^(−1/3), arredondado para inteiro ≥ 1 (as variáveis são contagens)."""
     iqr = float(serie.quantile(0.75) - serie.quantile(0.25))
     if iqr <= 0 or serie.size == 0:
         return 1
@@ -340,12 +317,8 @@ def _largura_freedman_diaconis(serie: pd.Series) -> int:
 
 
 def calcular_histograma_kde(dados: pd.DataFrame, variavel: str) -> dict[str, Any]:
-    """Histograma com faixas comuns aos dois times + KDE gaussiana por time.
-
-    As bordas são calculadas com os dois times juntos para que as barras
-    sejam comparáveis. A KDE (scipy.stats.gaussian_kde, banda de Scott) é
-    multiplicada por n·h para ficar na mesma escala do histograma
-    (número de jogos por faixa).
+    """Histograma com faixas comuns aos dois times e KDE (banda de Scott) escalada por n·h para a escala de
+    contagens.
     """
     conjunto = pd.concat([_valores(dados, time, variavel) for time in TIMES_ANALISADOS])
     largura = _largura_freedman_diaconis(conjunto)
@@ -384,7 +357,7 @@ def _serie_para_grafico(serie: pd.Series) -> list[float]:
 def calcular_estatisticas(
     dados: pd.DataFrame, time: str, variavel: str
 ) -> dict[str, Any]:
-    """Prepara os números que a página usa nos cartões e gráficos."""
+    """Dados dos cartões e gráficos de uma variável."""
     if variavel not in VARIAVEIS_ANALISADAS:
         variavel = VARIAVEIS_ANALISADAS[0]
     times = ["Todos"] if time == "Todos" else [time]
@@ -423,11 +396,7 @@ EXCLUSOES_ML = {
 
 
 def _classificar_tipo(coluna: str, serie: pd.Series) -> tuple[str, str]:
-    """Tipo conceitual (numérica, categórica, texto, data, binária) e subtipo.
-
-    O tipo vem do significado da coluna, não do dtype: Team_ID é armazenado
-    como inteiro, mas é um rótulo (categórico), e WL é inteiro com só 0/1.
-    """
+    """Tipo pelo significado da coluna, não pelo dtype (ex.: Team_ID é inteiro, mas categórico)."""
     if coluna == "GAME_DATE" or pd.api.types.is_datetime64_any_dtype(serie):
         return "data", "data do jogo (datetime)"
     if coluna == "MATCHUP":
@@ -450,7 +419,7 @@ def _classificar_tipo(coluna: str, serie: pd.Series) -> tuple[str, str]:
 
 
 def verificar_vazamento_wl(dados: pd.DataFrame) -> dict[str, Any]:
-    """Confere se W/L são acumulados após o jogo (e portanto revelam WL)."""
+    """Confere se W e L são acumulados após o jogo, revelando WL."""
     comparaveis = coincidem_w = coincidem_l = ordinal = total = 0
     for _, grupo in dados.sort_values("GAME_DATE").groupby("TEAM_NAME"):
         w = grupo["W"].astype(float)
@@ -473,7 +442,7 @@ def verificar_vazamento_wl(dados: pd.DataFrame) -> dict[str, Any]:
 
 
 def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
-    """Descreve os campos da base depois do tratamento."""
+    """Descrição, tipo e uso em ML de cada campo da base tratada."""
     padrao = ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
     linhas = []
     for coluna in dados.columns:
@@ -521,12 +490,7 @@ def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
 
 
 def calcular_perfil_z(dados: pd.DataFrame) -> dict[str, Any]:
-    """Médias dos times em z-score, com referência nos jogos dos dois times.
-
-    z = (média do time − média dos jogos dos dois times) / DP amostral desses
-    jogos. Coloca variáveis de escalas diferentes (PTS ≈ 113, BLK ≈ 5) num
-    mesmo eixo, em desvios padrão.
-    """
+    """Média de cada time em z, com referência nos jogos dos dois times."""
     variaveis = []
     for variavel in VARIAVEIS_ANALISADAS:
         coluna = MAPA_VARIAVEIS[variavel]
