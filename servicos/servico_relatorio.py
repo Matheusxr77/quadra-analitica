@@ -14,6 +14,7 @@ from analise import (
 from excecoes import ErroAplicacao
 from interpretacao import calcular_assimetria, calcular_cv, calcular_iqr
 from qualidade import calcular_qualidade
+from sintese import calcular_resposta_zscore, calcular_sintese
 from infraestrutura.repositorio_dados import RepositorioDados
 
 
@@ -53,6 +54,12 @@ class ServicoRelatorio:
             fonte, recorte = self._repositorio.obter_bases_brutas()
             self._qualidade = calcular_qualidade(self._obter_dados(), fonte, recorte)
         return self._qualidade
+
+    def perfil_z(self) -> dict[str, Any]:
+        return calcular_resposta_zscore(self._obter_dados())
+
+    def sintese(self) -> dict[str, Any]:
+        return calcular_sintese(self._obter_dados(), self.qualidade(), self.dicionario())
 
     def _obter_dados(self) -> pd.DataFrame:
         return self._repositorio.obter_dados()

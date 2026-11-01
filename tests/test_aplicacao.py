@@ -356,3 +356,66 @@ def test_importar_a_aplicacao_nao_carrega_pyod():
     saida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True,
                            cwd=Path(__file__).parents[1], check=True)
     assert saida.stdout.strip() == "False"
+
+
+# --- Base e síntese -----------------------------------------------------------
+
+def test_dicionario_classifica_os_cinco_tipos():
+    campos = {c["coluna_original"]: c for c in criar_cliente().get("/api/dicionario").get_json()["campos"]}
+    assert campos["GAME_DATE"]["tipo"] == "data"
+    assert campos["WL"]["tipo"] == "binária"
+    assert campos["MATCHUP"]["tipo"] == "texto"
+    for coluna in ("TEAM_NAME", "Team_ID", "Game_ID"):
+        assert campos[coluna]["tipo"] == "categórica"
+    assert campos["PTS"]["tipo"] == "numérica"
+    assert campos["FG_PCT"]["subtipo"].startswith("contínua")
+    assert {c["tipo"] for c in campos.values()} == {"numérica", "categórica", "texto", "data", "binária"}
+
+
+def test_exclusoes_para_ml_e_vazamento_de_w_l():
+    corpo = criar_cliente().get("/api/dicionario").get_json()
+    excluidas = {e["coluna"] for e in corpo["exclusoes"]}
+    assert excluidas == {"Team_ID", "Game_ID", "MATCHUP", "TEAM_NAME", "W", "L", "W_PCT"}
+    assert all(e["motivo"] for e in corpo["exclusoes"])
+    usos = {c["coluna_original"]: c["uso_ml"] for c in corpo["campos"]}
+    assert usos["WL"] == "alvo" and usos["PTS"] == "feature"
+    vazamento = corpo["vazamento"]
+    # W e L são acumulados após o jogo: a variação de W é o próprio resultado.
+    assert vazamento["variacao_w_igual_wl"] == vazamento["jogos_com_anterior"] > 0
+    assert vazamento["variacao_l_igual_derrota"] == vazamento["jogos_com_anterior"]
+    assert vazamento["w_mais_l_igual_numero_do_jogo"] == vazamento["jogos"]
+
+
+def test_perfil_z_usa_os_jogos_dos_dois_times_como_referencia():
+    from analise import MAPA_VARIAVEIS, calcular_perfil_z
+    from infraestrutura.repositorio_dados import RepositorioDados
+
+    raiz = Path(__file__).parents[1] / "dados"
+    dados = RepositorioDados(raiz / "stats_times_regular_final.csv").obter_dados()
+    perfil = calcular_perfil_z(dados)
+    for item in perfil["variaveis"]:
+        serie = dados[MAPA_VARIAVEIS[item["variavel"]]]
+        assert abs(item["media_referencia"] - serie.mean()) < 1e-9
+        assert abs(item["desvio_referencia"] - serie.std(ddof=1)) < 1e-9
+        ponderada = sum(t["n"] * t["z"] for t in item["times"].values())
+        assert abs(ponderada) < 1e-9  # referência = os próprios dois times
+        for time, t in item["times"].items():
+            esperado = (t["media"] - serie.mean()) / serie.std(ddof=1)
+            assert abs(t["z"] - esperado) < 1e-12
+
+
+def test_zscore_no_comparativo_e_pagina_de_sintese():
+    cliente = criar_cliente()
+    perfil = cliente.get("/api/perfil-z").get_json()
+    assert len(perfil["variaveis"]) == 7 and len(perfil["paragrafos"]) >= 4
+    assert "Onde o z-score entra" in cliente.get("/comparativo").data.decode("utf-8")
+
+    sintese = cliente.get("/api/sintese").get_json()
+    assert len(sintese["quadro"]) == 14
+    titulos = [s["titulo"] for s in sintese["secoes"]]
+    for titulo in ("Comparação entre os times", "Onde o z-score entra no gráfico de barras", "Limitações", "Conclusão"):
+        assert titulo in titulos
+    texto = " ".join(p for s in sintese["secoes"] for p in s["paragrafos"])
+    assert any(c.isdigit() for c in texto)
+    pagina = cliente.get("/sintese")
+    assert pagina.status_code == 200 and "Síntese" in pagina.data.decode("utf-8")

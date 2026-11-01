@@ -72,7 +72,12 @@ function construirBarras(dados) {
       tooltip: { callbacks: { label: (ctx) => {
         const item = Object.values(dados.comparativo)[ctx.dataIndex];
         if (ctx.dataset.label === "Moda") return `Moda: ${formatarModas(item)} ${dados.unidade}`;
-        return `${ctx.dataset.label}: ${formatar(ctx.parsed.y)} ${dados.unidade}`;
+        const linha = `${ctx.dataset.label}: ${formatar(ctx.parsed.y)} ${dados.unidade}`;
+        // z da média do time em relação aos 149 jogos (mesma escala do gráfico padronizado).
+        const perfil = window.perfilZ && window.perfilZ.variaveis.find((v) => v.variavel === dados.variavel);
+        const time = Object.keys(dados.comparativo)[ctx.dataIndex];
+        if (ctx.dataset.label === "Média" && perfil && perfil.times[time]) return [linha, `z da média = ${formatar(perfil.times[time].z)}`];
+        return linha;
       } } },
     }),
   });
@@ -445,9 +450,34 @@ async function carregarDicionario() {
   window.camposDicionario = dados.campos;
   const resumo = document.getElementById("resumo-dicionario");
   if (resumo) {
-    resumo.textContent = `${dados.linhas} registros analisados e ${dados.colunas} campos documentados. Abaixo, explore o significado, o tratamento e a categoria de cada campo.`;
+    resumo.textContent = `${dados.linhas} registros analisados e ${dados.colunas} campos documentados. Abaixo, explore o tipo, o uso em modelos, o significado e o tratamento de cada campo.`;
   }
-  preencherFiltrosDicionario(dados.campos);
+  const exemplos = {
+    "numérica": "contagens e proporções do jogo",
+    "categórica": "rótulos sem ordem nem aritmética",
+    "texto": "texto livre",
+    "data": "data convertida para datetime",
+    "binária": "apenas 0 ou 1",
+  };
+  const cardsTipos = document.getElementById("cards-tipos");
+  if (cardsTipos) {
+    cardsTipos.innerHTML = Object.entries(dados.tipos).map(([tipo, quantidade]) => {
+      const colunas = dados.campos.filter((c) => c.tipo === tipo).map((c) => c.coluna_original);
+      return `<div class="card-categoria"><span>${escaparHtml(tipo)}</span><strong>${quantidade}</strong><small>${escaparHtml(exemplos[tipo] || "")}</small><small class="lista-colunas">${escaparHtml(colunas.length > 6 ? `${colunas.slice(0, 6).join(", ")}…` : colunas.join(", "))}</small></div>`;
+    }).join("");
+  }
+  const resumoExclusoes = document.getElementById("resumo-exclusoes");
+  if (resumoExclusoes) {
+    resumoExclusoes.textContent = `${dados.exclusoes.length} colunas excluídas, WL como alvo e ${dados.features} colunas mantidas como variáveis explicativas`;
+    preencherTabela("tabela-exclusoes", [["Coluna"], ["Tipo"], ["Por que é excluída"]],
+      dados.exclusoes.map((e) => ({ celulas: [`<code>${escaparHtml(e.coluna)}</code>`, `<span class="etiqueta-tipo">${escaparHtml(e.tipo)}</span>`, escaparHtml(e.motivo)] })));
+    const v = dados.vazamento;
+    document.getElementById("texto-vazamento").innerHTML = [
+      `<strong>Evidência do vazamento em W, L e W_PCT.</strong> Ordenando os jogos de cada time pela data, a variação de W de um jogo para o seguinte é igual ao resultado WL em <strong>${v.variacao_w_igual_wl} de ${v.jogos_com_anterior}</strong> jogos com jogo anterior, a variação de L é igual à derrota (1 − WL) em <strong>${v.variacao_l_igual_derrota} de ${v.jogos_com_anterior}</strong>, e W + L é exatamente o número do jogo em <strong>${v.w_mais_l_igual_numero_do_jogo} de ${v.jogos}</strong>. Ou seja, os acumulados são registrados depois do jogo e já contêm o resultado que se quer prever.`,
+      `<strong>MATCHUP.</strong> A coluna bruta sai, mas o mando de quadra pode ser derivado dela: ${dados.mando.casa} jogos em casa ("vs.") e ${dados.mando.fora} fora ("@").`,
+    ].map((p) => `<p>${p}</p>`).join("");
+  }
+  preencherFiltrosDicionario(dados.campos, Object.keys(dados.tipos));
   atualizarDicionario();
 }
 
@@ -457,8 +487,9 @@ function escaparHtml(valor) {
   }[caractere]));
 }
 
-function preencherFiltrosDicionario(campos) {
-  const tipos = [...new Set(campos.map((item) => item.tipo))].sort();
+function preencherFiltrosDicionario(campos, ordemTipos) {
+  const presentes = new Set(campos.map((item) => item.tipo));
+  const tipos = (ordemTipos || [...presentes].sort()).filter((tipo) => presentes.has(tipo));
   const categorias = [...new Set(campos.map((item) => item.categoria))].sort();
   document.getElementById("filtro-tipo-dicionario").innerHTML += tipos.map((tipo) => `<option value="${escaparHtml(tipo)}">${escaparHtml(tipo)}</option>`).join("");
   document.getElementById("filtro-categoria-dicionario").innerHTML += categorias.map((categoria) => `<option value="${escaparHtml(categoria)}">${escaparHtml(categoria)}</option>`).join("");
@@ -470,13 +501,13 @@ function atualizarDicionario() {
   const tipo = document.getElementById("filtro-tipo-dicionario").value;
   const categoria = document.getElementById("filtro-categoria-dicionario").value;
   const filtrados = campos.filter((item) => {
-    const texto = [item.coluna_original, item.nome_apresentacao, item.descricao, item.explicacao, item.tratamento].join(" ").toLowerCase();
+    const texto = [item.coluna_original, item.nome_apresentacao, item.descricao, item.explicacao, item.tratamento, item.subtipo, item.uso_ml].join(" ").toLowerCase();
     return texto.includes(pesquisa) && (!tipo || item.tipo === tipo) && (!categoria || item.categoria === categoria);
   });
   document.getElementById("contador-dicionario").textContent = `${filtrados.length} de ${campos.length} campos`;
   document.getElementById("estado-vazio-dicionario").style.display = filtrados.length ? "none" : "block";
   document.getElementById("cards-dicionario").innerHTML = criarCardsDicionario(filtrados);
-  document.getElementById("tabela-dicionario").innerHTML = filtrados.map((item, indice) => `<tr class="linha-dicionario" data-indice="${indice}"><td><strong>${escaparHtml(item.coluna_original)}</strong></td><td>${escaparHtml(item.nome_apresentacao)}</td><td><span class="etiqueta-tipo">${escaparHtml(item.tipo)}</span></td><td><span class="etiqueta-categoria">${escaparHtml(item.categoria)}</span></td><td>${item.ausentes}</td><td><button class="botao-detalhes" type="button" aria-expanded="false">Ver explicação</button><div class="detalhe-campo"><strong>O que significa:</strong> ${escaparHtml(item.explicacao)}<br><strong>Tratamento:</strong> ${escaparHtml(item.tratamento)}</div></td></tr>`).join("");
+  document.getElementById("tabela-dicionario").innerHTML = filtrados.map((item, indice) => `<tr class="linha-dicionario" data-indice="${indice}"><td><strong>${escaparHtml(item.coluna_original)}</strong></td><td>${escaparHtml(item.nome_apresentacao)}</td><td><span class="etiqueta-tipo">${escaparHtml(item.tipo)}</span><small class="unidade">${escaparHtml(item.subtipo)}</small></td><td><code>${escaparHtml(item.armazenamento)}</code></td><td><span class="etiqueta-classe ${item.uso_ml === "excluída" ? "classe-forte" : item.uso_ml === "alvo" ? "classe-moderada" : "classe-consistente"}">${escaparHtml(item.uso_ml)}</span></td><td><span class="etiqueta-categoria">${escaparHtml(item.categoria)}</span></td><td>${item.ausentes}</td><td><button class="botao-detalhes" type="button" aria-expanded="false">Ver explicação</button><div class="detalhe-campo"><strong>O que significa:</strong> ${escaparHtml(item.explicacao)}<br><strong>Tratamento:</strong> ${escaparHtml(item.tratamento)}<br><strong>Uso em ML:</strong> ${escaparHtml(item.justificativa_ml)}</div></td></tr>`).join("");
   document.querySelectorAll(".botao-detalhes").forEach((botao) => botao.addEventListener("click", () => {
     const linha = botao.closest(".linha-dicionario");
     const aberto = linha.classList.toggle("aberto");
@@ -662,3 +693,66 @@ async function carregarMedida() {
 }
 
 carregarMedida();
+
+// ---------------------------------------------------------------------------
+// Comparativo: gráfico de barras padronizado (z-score) e resposta do enunciado.
+// ---------------------------------------------------------------------------
+
+async function carregarPerfilZ() {
+  const canvas = document.getElementById("grafico-zscore");
+  if (!canvas) {
+    return;
+  }
+  const resposta = await fetch("/api/perfil-z");
+  const dados = await resposta.json();
+  window.perfilZ = dados;
+  const labels = dados.variaveis.map((v) => v.variavel);
+  const datasets = dados.times.map((time, i) => ({
+    type: "bar", label: time, backgroundColor: cores[i], borderRadius: 3,
+    data: dados.variaveis.map((v) => v.times[time].z),
+  }));
+  datasets.push(linhaReferencia("Média dos 149 jogos (z = 0)", 0, labels, "#8998aa"));
+  const opcoes = opcoesPadrao({
+    titulo: "Médias dos times em z-score (referência: 149 jogos dos dois times)",
+    eixoX: "Variável",
+    eixoY: "z (desvios padrão em relação à média conjunta)",
+    tooltip: { callbacks: { label: (ctx) => {
+      const v = dados.variaveis[ctx.dataIndex];
+      if (ctx.dataset.type === "line") return `Média conjunta: ${formatar(v.media_referencia)} ${v.unidade} (DP ${formatar(v.desvio_referencia)})`;
+      const t = v.times[ctx.dataset.label];
+      return `${ctx.dataset.label}: z = ${formatar(t.z)} (média ${formatar(t.media)} ${v.unidade})`;
+    } } },
+  });
+  destruirGrafico("zscore");
+  graficos.zscore = new Chart(canvas, { type: "bar", data: { labels, datasets }, options: opcoes });
+  document.getElementById("texto-zscore").innerHTML = dados.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Síntese
+// ---------------------------------------------------------------------------
+
+async function carregarSintese() {
+  if (!document.querySelector("[data-pagina-sintese]")) {
+    return;
+  }
+  const resposta = await fetch("/api/sintese");
+  const dados = await resposta.json();
+  preencherTabela("s-quadro",
+    [["Variável (unidade)"], ["Time"], ["Média", true], ["Mediana", true], ["DP", true], ["CV (%)", true], ["G1", true], ["Forma"], ["IQR", true], ["Outliers", true], ["z", true]],
+    dados.quadro.map((l, i) => ({
+      classe: i % dados.times.length === 0 ? "inicio-grupo" : "",
+      celulas: [
+        i % dados.times.length === 0 ? `<strong>${escaparHtml(l.variavel)}</strong><small class="unidade">${escaparHtml(l.unidade)}</small>` : "",
+        escaparHtml(l.time), formatar(l.media), formatar(l.mediana), formatar(l.desvio_padrao),
+        `${formatar(l.cv_percentual)} <span class="etiqueta-classe classe-${l.classe_cv}">${escaparHtml(l.classe_cv)}</span>`,
+        formatar(l.assimetria), `<span class="etiqueta-classe classe-${l.intensidade_assimetria.split(" ")[0]}">${escaparHtml(l.intensidade_assimetria)}</span>`,
+        formatar(l.iqr), l.quantidade_outliers, formatar(l.z),
+      ],
+    })));
+  document.getElementById("interpretacao-sintese").innerHTML = dados.secoes.map((secao, i) =>
+    `<div class="secao-texto"><h4>${i + 1}. ${escaparHtml(secao.titulo)}</h4>${secao.paragrafos.map((p) => `<p>${escaparHtml(p)}</p>`).join("")}</div>`).join("");
+}
+
+carregarPerfilZ();
+carregarSintese();

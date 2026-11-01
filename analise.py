@@ -340,27 +340,149 @@ def calcular_estatisticas(
     }
 
 
+TIPOS_DADOS = ["numérica", "categórica", "texto", "data", "binária"]
+COLUNAS_IDENTIFICADORAS = {"Team_ID", "Game_ID", "TEAM_NAME"}
+COLUNAS_ACUMULADAS = {"W", "L", "W_PCT"}
+COLUNA_ALVO = "WL"
+
+EXCLUSOES_ML = {
+    "Team_ID": "Identificador numérico do time: o número não mede desempenho, e o modelo decoraria códigos em vez de aprender padrões de jogo.",
+    "Game_ID": "Identificador da partida: único por jogo, não se repete em jogos futuros e não carrega informação estatística.",
+    "TEAM_NAME": "Nome do time (redundante com Team_ID): o modelo aprenderia 'quem joga' em vez de 'como jogou' e não generalizaria para outros times.",
+    "MATCHUP": "Texto livre ('DAL vs. LAC', 'DAL @ UTA'). Não entra cru em um modelo; o mando de quadra (vs. = casa, @ = fora) e o adversário podem ser extraídos como variáveis derivadas.",
+    "W": "Vazamento: vitórias acumuladas DEPOIS do jogo; a variação de W de um jogo para o seguinte é o próprio resultado (WL).",
+    "L": "Vazamento: derrotas acumuladas DEPOIS do jogo; W + L é o número do jogo e a variação de L revela a derrota.",
+    "W_PCT": "Vazamento: W ÷ (W + L) já incorpora o resultado do próprio jogo.",
+}
+
+
+def _classificar_tipo(coluna: str, serie: pd.Series) -> tuple[str, str]:
+    """Tipo conceitual (numérica, categórica, texto, data, binária) e subtipo.
+
+    O tipo vem do significado da coluna, não do dtype: Team_ID é armazenado
+    como inteiro, mas é um rótulo (categórico), e WL é inteiro com só 0/1.
+    """
+    if coluna == "GAME_DATE" or pd.api.types.is_datetime64_any_dtype(serie):
+        return "data", "data do jogo (datetime)"
+    if coluna == "MATCHUP":
+        return "texto", "texto livre com sigla, mando (vs./@) e adversário"
+    if coluna in COLUNAS_IDENTIFICADORAS:
+        return "categórica", "nominal (identificador)"
+    valores = set(serie.dropna().unique())
+    if valores and valores <= {0, 1}:
+        return "binária", "0 = derrota, 1 = vitória" if coluna == COLUNA_ALVO else "0/1"
+    if serie.dtype == "object":
+        return "categórica", "nominal"
+    if coluna in COLUNAS_ACUMULADAS:
+        sufixo = " (proporção 0–1)" if coluna.endswith("PCT") else " (contagem)"
+        return "numérica", "acumulado da temporada" + sufixo
+    if coluna.endswith("_PCT"):
+        return "numérica", "contínua (proporção 0–1)"
+    if coluna == "MIN":
+        return "numérica", "discreta (minutos do time: 240 + 25 por prorrogação)"
+    return "numérica", "discreta (contagem por jogo)"
+
+
+def verificar_vazamento_wl(dados: pd.DataFrame) -> dict[str, Any]:
+    """Confere se W/L são acumulados após o jogo (e portanto revelam WL)."""
+    comparaveis = coincidem_w = coincidem_l = ordinal = total = 0
+    for _, grupo in dados.sort_values("GAME_DATE").groupby("TEAM_NAME"):
+        w = grupo["W"].astype(float)
+        l = grupo["L"].astype(float)
+        wl = grupo["WL"].astype(float)
+        diferenca_w, diferenca_l = w.diff(), l.diff()
+        validos = diferenca_w.notna()
+        comparaveis += int(validos.sum())
+        coincidem_w += int((diferenca_w[validos] == wl[validos]).sum())
+        coincidem_l += int((diferenca_l[validos] == 1 - wl[validos]).sum())
+        ordinal += int(((w + l).to_numpy() == np.arange(1, len(grupo) + 1)).sum())
+        total += len(grupo)
+    return {
+        "jogos": total,
+        "jogos_com_anterior": comparaveis,
+        "variacao_w_igual_wl": coincidem_w,
+        "variacao_l_igual_derrota": coincidem_l,
+        "w_mais_l_igual_numero_do_jogo": ordinal,
+    }
+
+
 def calcular_dicionario(dados: pd.DataFrame) -> dict[str, Any]:
     """Descreve os campos da base depois do tratamento."""
+    padrao = ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
     linhas = []
     for coluna in dados.columns:
-        tipo = "data" if coluna == "GAME_DATE" else (
-            "categórica/texto" if dados[coluna].dtype == "object" else "numérica"
-        )
+        tipo, subtipo = _classificar_tipo(coluna, dados[coluna])
+        if coluna in EXCLUSOES_ML:
+            uso, justificativa = "excluída", EXCLUSOES_ML[coluna]
+        elif coluna == COLUNA_ALVO:
+            uso, justificativa = "alvo", "Resultado a prever (vitória/derrota); não entra como variável explicativa."
+        elif coluna == "GAME_DATE":
+            uso, justificativa = "feature", "Mantida para ordenar os jogos e derivar variáveis (dias de descanso, sequência), não como data crua."
+        else:
+            uso, justificativa = "feature", "Estatística do jogo, utilizável como variável explicativa."
+        categoria, explicacao, tratamento = METADADOS_CAMPOS.get(coluna, padrao)
         linhas.append({
             "coluna_original": coluna,
             "nome_apresentacao": NOMES_COLUNAS.get(coluna, coluna),
             "tipo": tipo,
+            "subtipo": subtipo,
+            "armazenamento": str(dados[coluna].dtype),
+            "uso_ml": uso,
+            "justificativa_ml": justificativa,
             "ausentes": int(dados[coluna].isna().sum()),
             "descricao": NOMES_COLUNAS.get(coluna, "Identificador técnico"),
-            "categoria": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[0],
-            "explicacao": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[1],
-            "tratamento": METADADOS_CAMPOS.get(
-                coluna, ("Contexto do jogo", "Medida registrada na partida.", "Convertida para numérico quando aplicável.")
-            )[2],
+            "categoria": categoria,
+            "explicacao": explicacao,
+            "tratamento": tratamento,
         })
-    return {"linhas": int(len(dados)), "colunas": int(len(dados.columns)), "campos": linhas}
+    mando = dados["MATCHUP"].astype(str)
+    return {
+        "linhas": int(len(dados)),
+        "colunas": int(len(dados.columns)),
+        "campos": linhas,
+        "tipos": {tipo: sum(1 for l in linhas if l["tipo"] == tipo) for tipo in TIPOS_DADOS},
+        "exclusoes": [
+            {"coluna": l["coluna_original"], "tipo": l["tipo"], "motivo": l["justificativa_ml"]}
+            for l in linhas if l["uso_ml"] == "excluída"
+        ],
+        "vazamento": verificar_vazamento_wl(dados),
+        "mando": {
+            "casa": int(mando.str.contains(" vs. ", regex=False).sum()),
+            "fora": int(mando.str.contains(" @ ", regex=False).sum()),
+        },
+        "features": sum(1 for l in linhas if l["uso_ml"] == "feature"),
+    }
+
+
+def calcular_perfil_z(dados: pd.DataFrame) -> dict[str, Any]:
+    """Médias dos times em z-score, com referência nos jogos dos dois times.
+
+    z = (média do time − média dos jogos dos dois times) / DP amostral desses
+    jogos. Coloca variáveis de escalas diferentes (PTS ≈ 113, BLK ≈ 5) num
+    mesmo eixo, em desvios padrão.
+    """
+    variaveis = []
+    for variavel in VARIAVEIS_ANALISADAS:
+        coluna = MAPA_VARIAVEIS[variavel]
+        conjunto = dados.loc[dados["TEAM_NAME"].isin(TIMES_ANALISADOS), coluna].dropna()
+        media, desvio = float(conjunto.mean()), float(conjunto.std(ddof=1))
+        times = {}
+        for time in TIMES_ANALISADOS:
+            serie = _valores(dados, time, variavel)
+            media_time = float(serie.mean())
+            times[time] = {
+                "n": int(serie.size),
+                "media": media_time,
+                "z": (media_time - media) / desvio if desvio > 0 else 0.0,
+            }
+        a, b = TIMES_ANALISADOS
+        variaveis.append({
+            "variavel": variavel,
+            "unidade": UNIDADES[variavel],
+            "media_referencia": media,
+            "desvio_referencia": desvio,
+            "n_referencia": int(conjunto.size),
+            "times": times,
+            "diferenca_z": times[a]["z"] - times[b]["z"],
+        })
+    return {"times": TIMES_ANALISADOS, "referencia": "jogos dos dois times", "variaveis": variaveis}

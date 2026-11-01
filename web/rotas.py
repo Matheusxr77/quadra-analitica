@@ -82,6 +82,18 @@ def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
     def api_iqr():
         return jsonify(servico.iqr())
 
+    @rotas.get("/sintese")
+    def pagina_sintese():
+        return render_template("sintese.html", pagina_ativa="sintese")
+
+    @rotas.get("/api/sintese")
+    def api_sintese():
+        return jsonify(servico.sintese())
+
+    @rotas.get("/api/perfil-z")
+    def api_perfil_z():
+        return jsonify(servico.perfil_z())
+
     @rotas.get("/api/descritivas")
     def api_descritivas():
         return jsonify(servico.tabela_descritiva())
