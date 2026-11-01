@@ -82,12 +82,13 @@ METADADOS_CAMPOS = {
 
 
 def _normalizar_percentual(coluna: pd.Series) -> pd.Series:
-    """Converte percentuais misturados em fração, preservando a proporção.
+    """Garante percentuais em fração, no intervalo [0, 1].
 
-    A fonte contém valores como 0.39 e 506 para 39%. Valores acima de 1
-    estão em milésimos de proporção; dividir por 1000 os coloca na
-    mesma escala sem alterar a informação. Valores impossíveis são marcados
-    como ausentes para não contaminar os resumos.
+    Na fonte atual todos os percentuais já estão em fração (a página de
+    Qualidade confere isso). A regra é defensiva: se uma atualização trouxer
+    valores acima de 1 em milésimos de proporção, dividi-los por 1000 os põe
+    na mesma escala. O que ainda ficar fora de [0, 1] vira ausente para não
+    contaminar os resumos.
     """
     serie = pd.to_numeric(coluna, errors="coerce")
     serie = serie.where(serie <= 1, serie / 1000)
