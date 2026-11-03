@@ -706,3 +706,59 @@ def test_comparacao_bootstrap_e_referencias():
     assert abs(erro_padrao_g1(75) - 0.2774) < 1e-3
     ref = referencia_amplitude_iqr(75)
     assert 3.4 < ref["mediana"] < 3.8 and ref["mediana"] < ref["p95"] < 5.5
+
+
+def test_resumo_das_verificacoes_gerado_a_partir_dos_dados():
+    from qualidade import contar_ausentes, contar_duplicatas, verificar_dominio
+    from verificador_textos import conferir, valores
+
+    corpo = criar_cliente().get("/api/qualidade").get_json()
+    v = corpo["verificacoes"]
+    n_fonte = corpo["duplicatas"]["fonte"]["registros"]
+    n_recorte = corpo["duplicatas"]["recorte"]["registros"]
+    # Base real: sem ausentes, duplicatas nem violações de domínio -> frase-resumo + tabela recolhida.
+    assert v["dominio"]["sem_ocorrencias"] and v["dominio"]["verificacoes"] == len(corpo["dominio"]["regras"])
+    assert v["dominio"]["frase"] == (
+        f"Nenhuma das {len(corpo['dominio']['regras'])} regras de domínio foi violada nos "
+        f"{n_fonte:,}".replace(",", ".") + f" registros da fonte nem nos {n_recorte} do recorte."
+    )
+    assert v["ausentes"]["sem_ocorrencias"] and v["ausentes"]["verificacoes"] == len(corpo["ausentes"])
+    assert v["duplicatas"]["sem_ocorrencias"]
+    # Tabelas com ocorrências ficam abertas e a contagem bate com a tabela.
+    assert not v["grubbs"]["sem_ocorrencias"]
+    assert v["grubbs"]["ocorrencias"] == sum(
+        c["times"][t]["grubbs"]["quantidade"] for c in corpo["outliers_por_coluna"] if c["analisada"] for t in c["times"])
+    assert v["zeros"]["ocorrencias"] == sum(z["zeros"] + z["negativos"] for z in corpo["zeros_negativos"])
+    # Todo número citado nas frases sai da API.
+    pool = valores(corpo)
+    for chave, item in v.items():
+        assert conferir(item["frase"], pool)[1] == [], chave
+
+    # Com problemas injetados, a frase deixa de dizer "Nenhuma" e conta as ocorrências.
+    from qualidade import resumir_verificacoes
+
+    fonte, recorte = _bases_brutas()
+    sujo = recorte.copy()
+    sujo.loc[0, "FG_PCT"] = 506
+    sujo = pd.concat([sujo, sujo.iloc[[1]]], ignore_index=True)
+    sujo.loc[5, "BLK"] = None
+    resumo = resumir_verificacoes(
+        contar_ausentes(fonte, sujo, sujo), contar_duplicatas(fonte, sujo, sujo), [],
+        verificar_dominio(fonte, sujo), corpo["outliers_por_coluna"], corpo["outliers_multivariados"])
+    assert not resumo["dominio"]["sem_ocorrencias"] and "Nenhuma" not in resumo["dominio"]["frase"]
+    assert not resumo["duplicatas"]["sem_ocorrencias"]
+    assert resumo["ausentes"]["ocorrencias"] == 2  # BLK ausente no recorte e na base "tratada"
+
+
+def test_dominio_tolera_pts_ausente_em_jogo_com_prorrogacao():
+    from qualidade import verificar_dominio
+
+    fonte, recorte = _bases_brutas()
+    sujo = recorte.copy()
+    prorrogado = pd.to_numeric(sujo["MIN"], errors="coerce").gt(240).idxmax()
+    sujo.loc[prorrogado, "PTS"] = None
+    dominio = verificar_dominio(fonte, sujo)  # antes: ValueError em int(NaN)
+    jogos = dominio["jogos_prorrogacao"]
+    assert len(jogos) == len(verificar_dominio(fonte, recorte)["jogos_prorrogacao"])
+    assert sum(j["pontos"] is None for j in jogos) == 1
+    assert all(isinstance(j["pontos"], int) for j in jogos if j["pontos"] is not None)

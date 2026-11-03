@@ -241,12 +241,15 @@ def verificar_dominio(fonte: pd.DataFrame, recorte: pd.DataFrame) -> dict[str, A
     minutos = _numerico(recorte, "MIN")
     prorrogados = recorte[minutos > MINUTOS_REGULAMENTARES].copy()
     prorrogados["_data"] = pd.to_datetime(prorrogados["GAME_DATE"], errors="coerce")
+    prorrogados["_min"] = minutos[prorrogados.index]
+    prorrogados["_pts"] = _numerico(prorrogados, "PTS")
     jogos = [
         {
             **_jogo(linha),
-            "minutos": int(linha["MIN"]),
-            "prorrogacoes": classificar_minutos(linha["MIN"]),
-            "pontos": int(linha["PTS"]),
+            "minutos": int(linha["_min"]),
+            "prorrogacoes": classificar_minutos(linha["_min"]),
+            # PTS ausente vira None (a tela mostra "—"); ausentes já são contados na seção 1.
+            "pontos": None if pd.isna(linha["_pts"]) else int(linha["_pts"]),
         }
         for _, linha in prorrogados.sort_values(["TEAM_NAME", "_data"]).iterrows()
     ]
@@ -1122,6 +1125,115 @@ def _textos_base(ausentes, duplicatas, zeros, dominio, demonstracao, resumo) -> 
     return secoes
 
 
+# ---------------------------------------------------------------------------
+# Resumo das verificações (frase exibida antes de cada tabela de contagens)
+# ---------------------------------------------------------------------------
+
+def _inteiro(valor: int) -> str:
+    return _n(valor, 0)
+
+
+def _verificacao(ocorrencias: int, verificacoes: int, frase_vazia: str, frase_com: str) -> dict[str, Any]:
+    return {
+        "ocorrencias": int(ocorrencias),
+        "verificacoes": int(verificacoes),
+        "sem_ocorrencias": ocorrencias == 0,
+        "frase": frase_vazia if ocorrencias == 0 else frase_com,
+    }
+
+
+def resumir_verificacoes(
+    ausentes: list[dict[str, Any]],
+    duplicatas: dict[str, Any],
+    zeros: list[dict[str, Any]],
+    dominio: dict[str, Any],
+    por_coluna: list[dict[str, Any]],
+    multivariados: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Para cada tabela de contagens: total de ocorrências, nº de verificações e a frase-resumo."""
+    fonte, recorte = duplicatas["fonte"], duplicatas["recorte"]
+    n_fonte, n_recorte = _inteiro(fonte["registros"]), _inteiro(recorte["registros"])
+    n_tratado = _inteiro(duplicatas["registros_tratados"])
+    resumo: dict[str, dict[str, Any]] = {}
+
+    # Ausentes: colunas × três momentos (fonte, recorte bruto e base tratada).
+    com_ausente = [l for l in ausentes if any(l.get(k) for k in ("fonte", "recorte", "tratado"))]
+    total = sum(l.get(k) or 0 for l in ausentes for k in ("fonte", "recorte", "tratado"))
+    resumo["ausentes"] = _verificacao(
+        total, len(ausentes),
+        f"Nenhuma das {len(ausentes)} colunas tem valores ausentes nos {n_fonte} registros da fonte, "
+        f"nos {n_recorte} do recorte bruto nem nos {n_tratado} após o tratamento.",
+        f"{_plural(len(com_ausente), 'coluna tem', 'colunas têm')} valores ausentes "
+        f"({_inteiro(total)} células somando fonte, recorte e base tratada); linhas destacadas.",
+    )
+
+    # Duplicatas: cada contagem da tabela que indica repetição ou perda.
+    checagens = [fonte["linha_inteira"], fonte["chave_time_jogo"], fonte["jogos_fora_do_par"],
+                 recorte["linha_inteira"], recorte["chave_time_jogo"], duplicatas["removidos_no_tratamento"]]
+    total = sum(checagens)
+    resumo["duplicatas"] = _verificacao(
+        total, len(checagens),
+        f"Nenhuma das {len(checagens)} verificações de duplicidade encontrou repetição nos {n_fonte} "
+        f"registros da fonte nem nos {n_recorte} do recorte, e o tratamento não removeu linhas.",
+        f"{_plural(sum(1 for c in checagens if c), 'verificação acusou', 'verificações acusaram')} "
+        f"duplicidade ({_inteiro(total)} ocorrências); linhas destacadas.",
+    )
+
+    # Zeros e negativos no recorte bruto.
+    com_zero = [z for z in zeros if z["zeros"] or z["negativos"]]
+    total = sum(z["zeros"] + z["negativos"] for z in zeros)
+    resumo["zeros"] = _verificacao(
+        total, len(zeros),
+        f"Nenhuma das {len(zeros)} colunas numéricas tem zeros ou negativos nos {n_recorte} registros do recorte.",
+        f"{_plural(len(com_zero), 'coluna tem', 'colunas têm')} zeros ou negativos nos {n_recorte} "
+        f"registros do recorte ({_inteiro(total)} valores); as demais {len(zeros) - len(com_zero)} não têm nenhum.",
+    )
+
+    # Domínio: regras × (fonte, recorte).
+    regras = dominio["regras"]
+    violadas = [r for r in regras if r["violacoes_fonte"] or r["violacoes_recorte"]]
+    total = sum(r["violacoes_fonte"] + r["violacoes_recorte"] for r in regras)
+    resumo["dominio"] = _verificacao(
+        total, len(regras),
+        f"Nenhuma das {len(regras)} regras de domínio foi violada nos {n_fonte} registros da fonte "
+        f"nem nos {n_recorte} do recorte.",
+        f"{_plural(len(violadas), 'regra foi violada', 'regras foram violadas')} de {len(regras)} "
+        f"({_inteiro(total)} violações somando fonte e recorte); linhas destacadas.",
+    )
+
+    # Jogos com prorrogação no recorte.
+    jogos = dominio["jogos_prorrogacao"]
+    resumo["prorrogacao"] = _verificacao(
+        len(jogos), int(recorte["registros"]),
+        f"Nenhum dos {n_recorte} registros do recorte teve prorrogação (MIN acima de 240).",
+        f"{_inteiro(len(jogos))} dos {n_recorte} registros do recorte "
+        f"{'teve' if len(jogos) == 1 else 'tiveram'} prorrogação (MIN acima de 240).",
+    )
+
+    # Grubbs nas variáveis analisadas, por time.
+    series = [col["times"][t]["grubbs"] for col in por_coluna if col["analisada"] for t in col["times"]]
+    total = sum(g["quantidade"] for g in series)
+    n_variaveis = sum(1 for col in por_coluna if col["analisada"])
+    resumo["grubbs"] = _verificacao(
+        total, len(series),
+        f"O teste de Grubbs (α = {_n(ALFA_GRUBBS)}) não marcou outlier em nenhuma das {len(series)} séries "
+        f"({n_variaveis} variáveis × {len(series) // max(n_variaveis, 1)} times): todas pararam no primeiro passo.",
+        f"O teste de Grubbs (α = {_n(ALFA_GRUBBS)}) marcou {_plural(total, 'outlier', 'outliers')} em "
+        f"{sum(1 for g in series if g['quantidade'])} das {len(series)} séries; passos significativos destacados.",
+    )
+
+    # Multivariados: times × métodos.
+    contagens = [m["quantidade"] for info in multivariados["times"].values() for m in info["metodos"].values()]
+    total = sum(contagens)
+    resumo["multivariados"] = _verificacao(
+        total, len(contagens),
+        f"Nenhuma das {len(contagens)} combinações de time e método multivariado marcou jogo atípico.",
+        f"{sum(1 for c in contagens if c)} das {len(contagens)} combinações de time e método marcaram "
+        f"jogos ({_inteiro(total)} marcações); linhas destacadas.",
+    )
+    return resumo
+
+
 def calcular_qualidade(
     dados: pd.DataFrame, fonte: pd.DataFrame, recorte: pd.DataFrame
 ) -> dict[str, Any]:
@@ -1171,4 +1283,5 @@ def calcular_qualidade(
         "outliers_multivariados": multivariados,
         "secoes": secoes,
         "resumo": resumo,
+        "verificacoes": resumir_verificacoes(ausentes, duplicatas, zeros, dominio, por_coluna, multivariados),
     }

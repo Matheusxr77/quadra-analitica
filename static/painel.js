@@ -275,6 +275,32 @@ function preencherTabela(id, cabecalhos, linhas) {
     + "</tbody>";
 }
 
+// Frase-resumo antes da tabela; sem ocorrências, a tabela completa fica recolhida em <details>.
+function aplicarVerificacao(id, verificacao) {
+  const tabela = document.getElementById(id);
+  if (!tabela || !verificacao) return;
+  const bloco = tabela.closest(".tabela-rolavel") || tabela;
+  const anterior = bloco.closest("details.verificacoes");
+  const alvo = anterior || bloco;
+  if (alvo.previousElementSibling?.classList.contains("resumo-verificacao")) alvo.previousElementSibling.remove();
+  if (anterior) anterior.replaceWith(bloco);
+  const frase = document.createElement("p");
+  frase.className = `resumo-verificacao ${verificacao.sem_ocorrencias ? "sem-ocorrencias" : "com-ocorrencias"}`;
+  frase.textContent = verificacao.frase;
+  bloco.before(frase);
+  if (verificacao.sem_ocorrencias) {
+    const detalhes = document.createElement("details");
+    detalhes.className = "verificacoes";
+    detalhes.innerHTML = "<summary>Ver todas as verificações</summary>";
+    bloco.replaceWith(detalhes);
+    detalhes.appendChild(bloco);
+  }
+}
+
+function classes(...nomes) {
+  return nomes.filter(Boolean).join(" ");
+}
+
 function inteiro(valor) {
   return valor === null || valor === undefined ? "—" : Number(valor).toLocaleString("pt-BR");
 }
@@ -319,7 +345,8 @@ async function carregarQualidade() {
   const celulaAusente = (q, p) => (q === null ? "—" : `${inteiro(q)} <small>(${formatar(p)}%)</small>`);
   preencherTabela("q-ausentes",
     [["Coluna"], ["Descrição"], [`Fonte completa (n = ${inteiro(dup.registros)})`, true], [`Recorte bruto (n = ${inteiro(dados.duplicatas.recorte.registros)})`, true], [`Após tratamento (n = ${inteiro(dados.duplicatas.registros_tratados)})`, true]],
-    dados.ausentes.map((l) => ({ celulas: [`<code>${escaparHtml(l.coluna)}</code>`, escaparHtml(l.nome), celulaAusente(l.fonte, l.fonte_pct), celulaAusente(l.recorte, l.recorte_pct), celulaAusente(l.tratado, l.tratado_pct)] })));
+    dados.ausentes.map((l) => ({ classe: l.fonte || l.recorte || l.tratado ? "linha-ocorrencia" : "", celulas: [`<code>${escaparHtml(l.coluna)}</code>`, escaparHtml(l.nome), celulaAusente(l.fonte, l.fonte_pct), celulaAusente(l.recorte, l.recorte_pct), celulaAusente(l.tratado, l.tratado_pct)] })));
+  aplicarVerificacao("q-ausentes", dados.verificacoes?.ausentes);
 
   // Mecanismos de ausência
   document.getElementById("q-mecanismos").innerHTML = dados.mecanismos.map((m) =>
@@ -347,33 +374,38 @@ async function carregarQualidade() {
 
   // Duplicatas
   const rec = dados.duplicatas.recorte;
+  const ocorre = (...v) => (v.some((x) => x > 0) ? "linha-ocorrencia" : "");
   preencherTabela("q-duplicatas", [["Verificação"], ["Fonte completa", true], ["Recorte do grupo", true]], [
     { celulas: ["Registros", inteiro(dup.registros), inteiro(rec.registros)] },
-    { celulas: ["Linhas inteiras repetidas", inteiro(dup.linha_inteira), inteiro(rec.linha_inteira)] },
-    { celulas: ["Chave (TEAM_NAME, Game_ID) repetida", inteiro(dup.chave_time_jogo), inteiro(rec.chave_time_jogo)] },
+    { classe: ocorre(dup.linha_inteira, rec.linha_inteira), celulas: ["Linhas inteiras repetidas", inteiro(dup.linha_inteira), inteiro(rec.linha_inteira)] },
+    { classe: ocorre(dup.chave_time_jogo, rec.chave_time_jogo), celulas: ["Chave (TEAM_NAME, Game_ID) repetida", inteiro(dup.chave_time_jogo), inteiro(rec.chave_time_jogo)] },
     { celulas: ["Game_ID distintos", inteiro(dup.jogos_distintos), "—"] },
-    { celulas: ["Game_ID fora do par (≠ 2 registros)", inteiro(dup.jogos_fora_do_par), "—"] },
-    { celulas: ["Removidos pelo tratamento", "—", inteiro(dados.duplicatas.removidos_no_tratamento)] },
+    { classe: ocorre(dup.jogos_fora_do_par), celulas: ["Game_ID fora do par (≠ 2 registros)", inteiro(dup.jogos_fora_do_par), "—"] },
+    { classe: ocorre(dados.duplicatas.removidos_no_tratamento), celulas: ["Removidos pelo tratamento", "—", inteiro(dados.duplicatas.removidos_no_tratamento)] },
   ]);
+  aplicarVerificacao("q-duplicatas", dados.verificacoes?.duplicatas);
 
   // Zeros e negativos
   const comOcorrencia = dados.zeros_negativos.filter((z) => z.zeros || z.negativos);
   preencherTabela("q-zeros", [["Coluna"], ["Zeros", true], ["Negativos", true], ["Significado"]],
-    comOcorrencia.map((z) => ({ celulas: [`<code>${escaparHtml(z.coluna)}</code><small class="unidade">${escaparHtml(z.nome)}</small>`, inteiro(z.zeros), inteiro(z.negativos), `<small>${escaparHtml(z.significado)}</small>`] }))
+    comOcorrencia.map((z) => ({ classe: "linha-ocorrencia", celulas: [`<code>${escaparHtml(z.coluna)}</code><small class="unidade">${escaparHtml(z.nome)}</small>`, inteiro(z.zeros), inteiro(z.negativos), `<small>${escaparHtml(z.significado)}</small>`] }))
       .concat([{ celulas: [`<small>Demais ${dados.zeros_negativos.length - comOcorrencia.length} colunas</small>`, "0", "0", "<small>sem zeros nem negativos.</small>"] }]));
+  aplicarVerificacao("q-zeros", dados.verificacoes?.zeros);
 
   // Fora de domínio
   const regrasOrdenadas = [...dados.dominio.regras].sort((a, b) => a.coluna.localeCompare(b.coluna));
   preencherTabela("q-dominio", [["Coluna"], ["Regra"], ["Justificativa"], [`Fora do domínio — fonte (n = ${inteiro(dup.registros)})`, true], [`Fora do domínio — recorte bruto (n = ${inteiro(rec.registros)})`, true]],
     regrasOrdenadas.map((r, i) => ({
-      classe: i === 0 || regrasOrdenadas[i - 1].coluna !== r.coluna ? "inicio-grupo" : "",
+      classe: classes(i === 0 || regrasOrdenadas[i - 1].coluna !== r.coluna ? "inicio-grupo" : "", r.violacoes_fonte || r.violacoes_recorte ? "linha-ocorrencia" : ""),
       celulas: [i === 0 || regrasOrdenadas[i - 1].coluna !== r.coluna ? `<code>${escaparHtml(r.coluna)}</code>` : "", `<strong>${escaparHtml(r.regra)}</strong>`, `<small>${escaparHtml(r.descricao)}</small>`, inteiro(r.violacoes_fonte), inteiro(r.violacoes_recorte)],
     })));
+  aplicarVerificacao("q-dominio", dados.verificacoes?.dominio);
   const fonteMin = Object.fromEntries(dados.dominio.minutos_fonte.map((m) => [m.minutos, m.registros]));
   preencherTabela("q-minutos", [["MIN", true], ["Prorrogações", true], ["Registros na fonte", true], ["Registros no recorte", true], ["Leitura"]],
     dados.dominio.minutos_recorte.map((m) => ({ celulas: [inteiro(m.minutos), m.prorrogacoes ?? "fora", inteiro(fonteMin[m.minutos]), inteiro(m.registros), `<small>${m.prorrogacoes === 0 ? "tempo normal: 48 min × 5 jogadores" : m.prorrogacoes ? `240 + ${m.prorrogacoes} × 25 (5 min × 5 jogadores)` : "fora do domínio 240 + 25k"}</small>`] })));
   preencherTabela("q-prorrogacao", [["Time"], ["Data"], ["Confronto"], ["MIN", true], ["Prorrogações", true], ["PTS", true]],
     dados.dominio.jogos_prorrogacao.map((j) => ({ celulas: [escaparHtml(j.time), j.data, escaparHtml(j.confronto), inteiro(j.minutos), j.prorrogacoes, inteiro(j.pontos)] })));
+  aplicarVerificacao("q-prorrogacao", dados.verificacoes?.prorrogacao);
 
   // Outliers por variável (7 métodos) e concordância
   const par = dados.parametros;
@@ -444,7 +476,7 @@ async function carregarQualidade() {
     times.forEach((time, i) => {
       col.times[time].grubbs.passos.forEach((p, k) => {
         linhasGrubbs.push({
-          classe: i === 0 && k === 0 ? "inicio-grupo" : "",
+          classe: classes(i === 0 && k === 0 ? "inicio-grupo" : "", p.significativo ? "linha-ocorrencia" : ""),
           celulas: [k === 0 ? `${escaparHtml(col.variavel)} <small class="unidade">${escaparHtml(col.coluna)}</small>` : "", k === 0 ? escaparHtml(time) : "", k + 1, p.n,
             formatar(p.media), formatar(p.desvio), formatar(p.valor), formatar(p.g, 4), formatar(p.g_critico, 4),
             etiquetaSimNao(p.significativo, "outlier — removido", "não significativo — para")],
@@ -453,6 +485,7 @@ async function carregarQualidade() {
     });
   });
   preencherTabela("q-grubbs", [["Variável"], ["Time"], ["Passo", true], ["n", true], ["Média", true], ["DP", true], ["Valor testado", true], ["G", true], ["G crítico", true], ["Decisão"]], linhasGrubbs);
+  aplicarVerificacao("q-grubbs", dados.verificacoes?.grubbs);
 
   // Outliers multivariados
   const mv = dados.outliers_multivariados;
@@ -464,13 +497,14 @@ async function carregarQualidade() {
     ["ecod", "knn", "dbscan", "lof"].forEach((m, k) => {
       const jogos = info.metodos[m].jogos;
       linhasMv.push({
-        classe: k === 0 ? "inicio-grupo" : "",
+        classe: classes(k === 0 ? "inicio-grupo" : "", info.metodos[m].quantidade ? "linha-ocorrencia" : ""),
         celulas: [k === 0 ? `${escaparHtml(time)}<small class="unidade">${info.n} jogos · ${info.em_todos} marcados pelos 4</small>` : "", ROTULOS_METODOS[m], `<strong>${info.metodos[m].quantidade}</strong>`,
           jogos.map((j) => `<span class="outlier-item">${j.data} ${escaparHtml(j.confronto)} <small>${mv.colunas.map((c) => `${c} ${formatar(j.valores[c], 0)}`).join(" · ")}</small></span>`).join("") || "<small>nenhum</small>"],
       });
     });
   });
   preencherTabela("q-multivariados", [["Time"], ["Método"], ["Jogos", true], ["Quais (data, confronto e valores)"]], linhasMv);
+  aplicarVerificacao("q-multivariados", dados.verificacoes?.multivariados);
 
   // Teoria dos métodos
   document.getElementById("q-metodos").innerHTML = dados.metodos.map((m) =>
