@@ -7,26 +7,90 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
   {% block bibliotecas %}{% endblock %}
 </head>
-<body>
+<body class="{% if projeto_ativo == 2 %}modo-projeto-2{% elif projeto_ativo == 1 %}modo-projeto-1{% endif %}">
   <aside class="barra-lateral">
     <a class="marca" href="{{ url_for('relatorio.pagina_principal') }}">
       <span class="marca-icone">Q</span>
       <div><strong>QUADRA</strong><small>ANALÍTICA</small></div>
     </a>
-    <p class="rotulo-menu">RELATÓRIO</p>
-    <a class="item-menu {% if pagina_ativa == 'visao_geral' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_principal') }}">Visão geral</a>
-    <a class="item-menu {% if pagina_ativa == 'comparativo' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_comparativo') }}">Comparativo</a>
-    <a class="item-menu {% if pagina_ativa == 'assimetria' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_assimetria') }}">Assimetria</a>
-    <a class="item-menu {% if pagina_ativa == 'cv' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_cv') }}">Coeficiente de variação</a>
-    <a class="item-menu {% if pagina_ativa == 'iqr' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_iqr') }}">Intervalo interquartil</a>
-    <a class="item-menu {% if pagina_ativa == 'qualidade' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_qualidade') }}">Qualidade dos dados</a>
-    <a class="item-menu {% if pagina_ativa == 'sintese' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_sintese') }}">Síntese</a>
-    <a class="item-menu {% if pagina_ativa == 'dicionario' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_dicionario') }}">Dicionário de dados</a>
-    <div class="rodape-menu">Laboratório de Ciência de Dados<br>Projeto 1 · 2026.2</div>
+
+    <!-- Seletor Rápido de Projeto para Avaliação Eficiente -->
+    <div class="filtro-projeto-menu">
+      <span class="rotulo-filtro">FILTRAR NAVEGAÇÃO:</span>
+      <div class="botoes-filtro-projeto">
+        <button type="button" class="btn-filtro-proj {% if not projeto_ativo %}ativo{% endif %}" data-alvo="todos" title="Exibir todo o menu">Todos</button>
+        <button type="button" class="btn-filtro-proj {% if projeto_ativo == 1 %}ativo{% endif %}" data-alvo="p1" title="Avaliar apenas Projeto 1">Projeto 1</button>
+        <button type="button" class="btn-filtro-proj destaque-p2 {% if projeto_ativo == 2 %}ativo{% endif %}" data-alvo="p2" title="Avaliar apenas Projeto 2">Projeto 2 ⭐</button>
+      </div>
+    </div>
+
+    <div class="container-menus-projetos">
+      <!-- ================= PROJETO 2 ================= -->
+      <section class="bloco-menu-projeto" id="menu-projeto-2">
+        <p class="rotulo-menu rotulo-p2">
+          <span class="tag-projeto tag-p2">PROJETO 2</span> CLUSTERING
+        </p>
+        <a class="item-menu {% if pagina_ativa == 'projeto2_visao_geral' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">
+          <span class="icone-menu">📋</span> Visão Geral & Rubrica
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'projeto2_parte1' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">
+          <span class="icone-menu">🎯</span> Parte 1: K-Means (Times)
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'projeto2_parte2' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">
+          <span class="icone-menu">⚡</span> Parte 2: 5 Algoritmos
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'projeto2_parte3' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">
+          <span class="icone-menu">🌐</span> Parte 3: Liga (30 Times)
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'projeto2_teoria' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">
+          <span class="icone-menu">📐</span> Fundamentos Teóricos
+        </a>
+      </section>
+
+      <!-- ================= PROJETO 1 ================= -->
+      <section class="bloco-menu-projeto" id="menu-projeto-1">
+        <p class="rotulo-menu rotulo-p1">
+          <span class="tag-projeto tag-p1">PROJETO 1</span> DESCRITIVA
+        </p>
+        <a class="item-menu {% if pagina_ativa == 'visao_geral' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_principal') }}">
+          <span class="icone-menu">📊</span> Visão geral
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'comparativo' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_comparativo') }}">
+          <span class="icone-menu">⚖️</span> Comparativo
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'assimetria' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_assimetria') }}">
+          <span class="icone-menu">📐</span> Assimetria
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'cv' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_cv') }}">
+          <span class="icone-menu">📈</span> Coeficiente de variação
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'iqr' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_iqr') }}">
+          <span class="icone-menu">📦</span> Intervalo interquartil
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'qualidade' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_qualidade') }}">
+          <span class="icone-menu">🔍</span> Qualidade dos dados
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'sintese' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_sintese') }}">
+          <span class="icone-menu">📑</span> Síntese
+        </a>
+        <a class="item-menu {% if pagina_ativa == 'dicionario' %}ativo{% endif %}" href="{{ url_for('relatorio.pagina_dicionario') }}">
+          <span class="icone-menu">📖</span> Dicionário de dados
+        </a>
+      </section>
+    </div>
+
+    <div class="rodape-menu">
+      Laboratório de Ciência de Dados<br>
+      Projetos 1 &amp; 2 · 2026.2<br>
+      <small style="color: var(--azul);">Prof. Ryan Azevedo</small>
+    </div>
   </aside>
+
   <main class="conteudo">
     {% block conteudo %}{% endblock %}
-    <footer>Fonte: stats_times_regular_final · Valores percentuais normalizados para fração; quartis por interpolação linear; desvio padrão amostral.</footer>
+    <footer>
+      Fonte: stats_times_regular_final · Dallas Mavericks e Indiana Pacers (P1 &amp; P2 Parte 1) · Liga Completa NBA (P2 Parte 3).
+    </footer>
   </main>
   <script src="{{ url_for('static', filename='painel.js') }}"></script>
 </body>

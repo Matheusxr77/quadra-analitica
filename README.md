@@ -1,6 +1,43 @@
-# Quadra Analítica — Dallas Mavericks e Indiana Pacers
+# Quadra Analítica — Dallas Mavericks, Indiana Pacers e Liga NBA
 
-Dashboard para o Projeto 1 de Laboratório de Ciência de Dados.
+Dashboard analítico para os **Projetos 1 e 2** de Laboratório de Ciência de Dados UFAPE.
+
+O sistema conta com divisão clara e independente entre o **Projeto 1 (Estatística Descritiva)** e o **Projeto 2 (Clustering e Descoberta de Padrões)**, permitindo alternar ou filtrar a navegação para avaliar com máxima eficiência os requisitos de cada etapa.
+
+---
+
+## Estrutura dos Projetos no Sistema
+
+### 🌟 Projeto 2 — Agrupamento e Descoberta de Padrões (Clustering)
+Acessível diretamente pelo menu lateral (ou via `/projeto2`), o Projeto 2 está dividido exatamente nas 3 partes do edital:
+
+1. **Visão Geral & Rubrica (`/projeto2`)**:
+   - Painel central com a **Matriz de Avaliação de Requisitos**, mapeando 100% dos itens do enunciado do professor com status de atendimento e botões de acesso direto.
+2. **Parte 1 — K-Means nos Times Selecionados (`/projeto2/parte1`)**:
+   - Implementação de K-Means sobre as 7 métricas canônicas: `PTS`, `REB`, `AST`, `STL`, `BLK`, `PF`, `FG3M`.
+   - Seletor reativo de $K \in \{2, 3, 4, 5\}$ e filtro por time (Dallas Mavericks, Indiana Pacers ou ambos).
+   - Caracterização tática dos clusters (maior pontuação, maior assistências, maior rebotes, maior 3P, maior faltas e perfil equilibrado).
+   - **Os 7 Gráficos Canônicos:** Dispersão (Scatter Plot 2D com centroides projetados via PCA), BoxPlot por cluster, Radar Chart (assinatura z-score), Histograma por cluster, Linha temporal ao longo da temporada, Barras de jogos por cluster e Comparação entre $K=2, 3, 4$.
+   - Conclusão com Silhouette Score, Inércia e justificativa metodológica da configuração ideal ($K=3$).
+   - Justificativa técnica formal dos hiperparâmetros (`n_clusters`, `init='k-means++'`, `n_init=10`, `random_state=42`).
+3. **Parte 2 — Múltiplos Algoritmos de Clustering (`/projeto2/parte2`)**:
+   - Benchmarking rigoroso entre 5 algoritmos: **K-Means**, **Hierarchical Clustering (Aglomerativo - Ward)**, **DBSCAN** (densidade e detecção de ruído), **Gaussian Mixture Model (GMM - EM)** e **Spectral Clustering** (Laplaciana de grafos).
+   - Tabela comparativa com métricas intrínsecas: Silhouette Score, Davies-Bouldin, Calinski-Harabasz, contagem de ruídos/outliers, complexidade assintótica e geometria de cluster.
+   - Gráfico de dispersão 2D interativo por algoritmo e gráfico de barras comparativo de Silhouette.
+   - Análise analítica orientada à tomada de decisão tática no basquete.
+4. **Parte 3 — Análise Global da Liga NBA (`/projeto2/parte3`)**:
+   - Escala das análises para toda a base de dados (todos os 30 times da NBA).
+   - Mudança de estratégia com ênfase nas franquias (médias multivariadas por equipe).
+   - Respostas completas, detalhadas e embasadas em dados para as **6 perguntas fundamentais do professor** (perfis semelhantes, arquétipos ofensivos, correlação pontos vs assistências com $r = 0,55$, rebotes sem alta pontuação, perfis táticos e sentido no contexto real do basquete).
+   - Tabela completa de todas as 30 equipes classificadas por cluster.
+5. **Fundamentos Teóricos (`/projeto2/teoria`)**:
+   - Teoria completa do K-Means (o que é centroide, distância Euclidiana, atribuição de Voronoi, recálculo, convergência, função de custo WCSS/Inércia e sensibilidade à inicialização com k-means++).
+   - Teoria, premissas e formulação matemática formal dos 5 algoritmos de clustering.
+
+### 📊 Projeto 1 — Estatística Descritiva e Qualidade dos Dados
+- Visão Geral, Comparativo com Boxplot de Tukey e Histograma com KDE, Assimetria (Pearson $G_1$), Coeficiente de Variação (CV), Intervalo Interquartil (IQR), Qualidade dos Dados (detecção de duplicatas e outliers) e Dicionário de Dados.
+
+---
 
 ## Linguagens e tecnologias
 
@@ -19,12 +56,14 @@ A aplicação foi organizada para que uma alteração futura não precise atrave
 todo o sistema:
 
 ```text
-web/rotas.py                  # HTTP, parâmetros e respostas JSON
+web/rotas.py                  # HTTP, rotas do P1 e P2, parâmetros e respostas JSON
 web/erros.py                  # tratamento uniforme e sem vazamento de detalhes
-servicos/servico_relatorio.py # casos de uso e validação das entradas
+servicos/servico_relatorio.py # casos de uso e validação das entradas do Projeto 1
+servicos/servico_projeto2.py  # orquestração analítica do Projeto 2 (Partes 1, 2 e 3)
 infraestrutura/repositorio_dados.py # leitura, tipagem, limpeza e cache da fonte
 infraestrutura/preparador_dados.py # geração física do CSV exclusivo do grupo
-analise.py                    # domínio estatístico puro sobre DataFrames
+analise.py                    # domínio estatístico descritivo (Projeto 1)
+clustering.py                 # domínio de agrupamento multivariado e ML (Projeto 2)
 configuracao.py               # caminhos e limites da aplicação
 ```
 

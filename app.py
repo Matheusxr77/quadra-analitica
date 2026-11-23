@@ -9,6 +9,7 @@ from flask import Flask, g, request
 from configuracao import Configuracao
 from infraestrutura.repositorio_dados import RepositorioDados
 from servicos.servico_relatorio import ServicoRelatorio
+from servicos.servico_projeto2 import ServicoProjeto2
 from web.erros import registrar_tratamento_de_erros
 from web.rotas import criar_blueprint
 
@@ -27,7 +28,8 @@ def criar_aplicacao(configuracao: Configuracao | None = None) -> Flask:
         configuracao.caminho_dados_selecionados,
     )
     servico = ServicoRelatorio(repositorio)
-    aplicacao.register_blueprint(criar_blueprint(servico))
+    servico_p2 = ServicoProjeto2(repositorio)
+    aplicacao.register_blueprint(criar_blueprint(servico, servico_p2))
     registrar_tratamento_de_erros(aplicacao)
     _registrar_protecoes_http(aplicacao)
     return aplicacao

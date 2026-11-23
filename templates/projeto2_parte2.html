@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Projeto 2 — Parte 2: Múltiplos Algoritmos{% endblock %}
+{% block bibliotecas %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>
+{% endblock %}
+
+{% block conteudo %}
+<header class="cabecalho">
+  <div>
+    <p class="sobrelinha">PROJETO 2 · PARTE 2</p>
+    <h1>Múltiplos Algoritmos de Clustering</h1>
+    <p class="subtitulo">
+      Implementação e benchmarking comparativo entre <strong>5 paradigmas de agrupamento</strong>:
+      K-Means, Hierarchical Clustering, DBSCAN, Gaussian Mixture Model (GMM) e Spectral Clustering.
+    </p>
+  </div>
+  <div class="status"><i></i> 5 Modelos Calibrados</div>
+</header>
+
+<!-- Navegação Rápida entre as Seções do Projeto 2 -->
+<nav class="abas-projeto2">
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">📋 Visão Geral &amp; Rubrica</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">🎯 Parte 1: K-Means (Times)</a>
+  <a class="aba-item ativa" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">⚡ Parte 2: 5 Algoritmos</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">🌐 Parte 3: Liga (30 Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">📐 Fundamentos Teóricos</a>
+</nav>
+
+<!-- Seletor Interativo de Algoritmo e K -->
+<section class="controles painel" style="margin-top: 24px;">
+  <div>
+    <label for="seletor-p2-algoritmo">ALGORITMO EM DESTAQUE NO SCATTER</label>
+    <select id="seletor-p2-algoritmo">
+      <option value="K-Means">K-Means (Particional / Centroides)</option>
+      <option value="Hierarchical Clustering">Hierarchical Clustering (Aglomerativo - Ward)</option>
+      <option value="DBSCAN">DBSCAN (Baseado em Densidade)</option>
+      <option value="Gaussian Mixture Model (GMM)">Gaussian Mixture Model (Probabilístico EM)</option>
+      <option value="Spectral Clustering">Spectral Clustering (Laplaciana de Grafos)</option>
+    </select>
+  </div>
+  <div>
+    <label for="seletor-p2-k">PARÂMETRO K (COMPONENTES)</label>
+    <select id="seletor-p2-k">
+      <option value="2">K = 2</option>
+      <option value="3" selected>K = 3 (Recomendado)</option>
+      <option value="4">K = 4</option>
+    </select>
+  </div>
+  <div class="nota-controle">
+    O DBSCAN calibra seu raio ε adaptativamente via distância k-NN; os demais modelos utilizam o valor de K selecionado.
+  </div>
+</section>
+
+<!-- Tabela Comparativa de Todos os Resultados Obtidos para Tomada de Decisão -->
+<section class="painel secao-inferior" id="secao-comparativo">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">BENCHMARKING QUANTITATIVO</p>
+      <h2>Comparação de Todos os Resultados Obtidos</h2>
+      <p>Métricas padronizadas de validação intrínseca para embasar a tomada de decisões táticas e estatísticas.</p>
+    </div>
+  </div>
+
+  <div class="tabela-rolavel" style="margin-top: 16px;">
+    <table class="tabela-medida" id="tabela-comparativo-algoritmos">
+      <thead>
+        <tr>
+          <th>Algoritmo</th>
+          <th>Paradigma Teórico</th>
+          <th class="num">Clusters Formados</th>
+          <th class="num">Ruídos (Outliers)</th>
+          <th class="num">Silhouette Score ↑</th>
+          <th class="num">Davies-Bouldin ↓</th>
+          <th class="num">Calinski-Harabasz ↑</th>
+          <th>Geometria de Cluster</th>
+          <th>Complexidade</th>
+        </tr>
+      </thead>
+      <tbody id="corpo-tabela-algoritmos">
+        <tr><td colspan="9">Processando benchmarking dos 5 modelos…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="nota-tabela">
+    <strong>Silhouette Score:</strong> Coesão vs. separação (maior é melhor, faixa [-1, 1]).
+    <strong>Davies-Bouldin:</strong> Razão de dispersão intra/inter cluster (menor é melhor).
+    <strong>Calinski-Harabasz:</strong> Razão de variância explicada entre clusters (maior é melhor).
+    <strong>Ruídos:</strong> Partidas atípicas isoladas com label -1 (exclusivo do DBSCAN).
+  </p>
+</section>
+
+<!-- Gráficos Comparativos: Dispersão 2D e Barras de Silhueta -->
+<section class="grade-graficos" style="margin-top: 24px;">
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">VISUALIZAÇÃO ESPACIAL</p>
+        <h3 id="titulo-scatter-algoritmo">Projeção 2D do Algoritmo Selecionado</h3>
+        <p>Distribuição das partidas e agrupamento resultante no plano PCA</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p2-scatter"></canvas>
+    </div>
+  </article>
+
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">COMPARAÇÃO DIRETA</p>
+        <h3>Silhouette Score Comparativo entre os 5 Métodos</h3>
+        <p>Validação da coesão e nitidez das fronteiras entre clusters</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p2-barras-silhueta"></canvas>
+    </div>
+  </article>
+</section>
+
+<!-- Análise Crítica e Síntese para Tomada de Decisão -->
+<section class="painel secao-inferior">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">INTERPRETAÇÃO TEXTUAL CRÍTICA</p>
+      <h2>Síntese Comparativa para Tomada de Decisões Táticas</h2>
+      <p>Recomendações técnicas para a comissão de dados e comissão técnica do clube.</p>
+    </div>
+  </div>
+
+  <div class="grade-cartoes-texto" style="margin-top: 16px;">
+    <article class="cartao-texto">
+      <h4>1. K-Means vs. Agrupamento Hierárquico (Ward)</h4>
+      <p class="cartao-sub">Melhores opções para categorização tática estável</p>
+      <p class="cartao-paragrafo">
+        O <strong>K-Means</strong> e o <strong>Hierarchical Clustering (Ward)</strong> apresentaram as maiores pontuações de silhueta e a maior
+        interpretabilidade prática. O critério de Ward minimiza o incremento de variância a cada fusão aglomerativa, produzindo clusters convexos
+        muito alinhados aos centroides do K-Means. Ambos são recomendados para rotulagem de rotinas táticas (jogos ofensivos, defensivos e de ritmo médio).
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>2. O Papel Estratégico do DBSCAN</h4>
+      <p class="cartao-sub">Detector superior de jogos anômalos e prorrogações</p>
+      <p class="cartao-paragrafo">
+        O <strong>DBSCAN</strong> desempenha uma função complementar de imenso valor: ao contrário dos demais que forçam todas as observações
+        em algum cluster, o DBSCAN identificou os pontos de <em>ruído tático</em> (rotulados como -1). Essas partidas correspondem a jogos com
+        múltiplas prorrogações (overtimes) ou noites atípicas com disparada de faltas ou tocos, protegendo os clusters centrais de contaminações extremas.
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>3. Gaussian Mixture Model (GMM): Soft Clustering</h4>
+      <p class="cartao-sub">Pertinência probabilística para jogos de transição</p>
+      <p class="cartao-paragrafo">
+        O <strong>GMM</strong> permite modelar clusters com matrizes de covariância completas, adaptando-se a formatos elipsoidais inclinados no $\mathbb{R}^7$.
+        Sua grande virtude para o basquete é fornecer probabilidades de pertinência: uma partida que teve boa pontuação mas também alta disputa física
+        recebe, por exemplo, 65% de probabilidade de pertencer ao cluster ofensivo e 35% ao cluster de garrafão, refletindo a natureza fluida do esporte.
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>4. Spectral Clustering: Variedades Não-Lineares</h4>
+      <p class="cartao-sub">Grafo de afinidade e projeção Laplaciana</p>
+      <p class="cartao-paragrafo">
+        O <strong>Spectral Clustering</strong> mapeia os dados em um grafo de vizinhos antes da clusterização. Embora exiba custo computacional superior $O(n^3)$,
+        ele comprova que a estrutura multivariada do basquete não depende de manifolds excessivamente sinuosos. Para relatórios operacionais do dia a dia,
+        o K-Means e Ward continuam sendo mais parcimoniosos e diretos.
+      </p>
+    </article>
+  </div>
+</section>
+{% endblock %}

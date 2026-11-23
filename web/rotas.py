@@ -4,10 +4,16 @@ from flask import Blueprint, jsonify, render_template, request
 
 from analise import VARIAVEIS_ANALISADAS, TIMES_ANALISADOS
 from servicos.servico_relatorio import ServicoRelatorio
+from servicos.servico_projeto2 import ServicoProjeto2
 
 
-def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
+def criar_blueprint(
+    servico: ServicoRelatorio,
+    servico_p2: ServicoProjeto2 | None = None,
+) -> Blueprint:
     rotas = Blueprint("relatorio", __name__)
+    if servico_p2 is None:
+        servico_p2 = ServicoProjeto2(servico._repositorio)
 
     @rotas.get("/health")
     def verificacao_de_saude():
@@ -105,5 +111,85 @@ def criar_blueprint(servico: ServicoRelatorio) -> Blueprint:
             "variavel", VARIAVEIS_ANALISADAS[0], type=str
         ).strip()
         return jsonify(servico.estatisticas(time, variavel))
+
+    # =========================================================================
+    # ROTAS DO PROJETO 2 (CLUSTERING)
+    # =========================================================================
+
+    @rotas.get("/projeto2")
+    def pagina_projeto2_visao_geral():
+        """Painel de Avaliação de Requisitos e Visão Geral do Projeto 2."""
+        return render_template(
+            "projeto2_visao_geral.html",
+            pagina_ativa="projeto2_visao_geral",
+            projeto_ativo=2,
+            times=TIMES_ANALISADOS,
+        )
+
+    @rotas.get("/projeto2/parte1")
+    def pagina_projeto2_parte1():
+        """Parte 1: K-Means (Dallas Mavericks & Indiana Pacers) com k=2,3,4."""
+        return render_template(
+            "projeto2_parte1.html",
+            pagina_ativa="projeto2_parte1",
+            projeto_ativo=2,
+            times=TIMES_ANALISADOS,
+        )
+
+    @rotas.get("/projeto2/parte2")
+    def pagina_projeto2_parte2():
+        """Parte 2: Múltiplos algoritmos (Hierarchical, DBSCAN, GMM, Spectral)."""
+        return render_template(
+            "projeto2_parte2.html",
+            pagina_ativa="projeto2_parte2",
+            projeto_ativo=2,
+        )
+
+    @rotas.get("/projeto2/parte3")
+    def pagina_projeto2_parte3():
+        """Parte 3: Análise global da liga (todos os 30 times da NBA)."""
+        return render_template(
+            "projeto2_parte3.html",
+            pagina_ativa="projeto2_parte3",
+            projeto_ativo=2,
+        )
+
+    @rotas.get("/projeto2/teoria")
+    def pagina_projeto2_teoria():
+        """Fundamentos teóricos e matemática dos 5 algoritmos."""
+        teoria_dados = servico_p2.teoria()
+        return render_template(
+            "projeto2_teoria.html",
+            pagina_ativa="projeto2_teoria",
+            projeto_ativo=2,
+            teoria=teoria_dados,
+        )
+
+    # API Endpoints do Projeto 2
+
+    @rotas.get("/api/projeto2/parte1")
+    def api_projeto2_parte1():
+        time = request.args.get("time", "Todos", type=str).strip()
+        k = request.args.get("k", 3, type=int)
+        return jsonify(servico_p2.parte1_kmeans(time=time, k=k))
+
+    @rotas.get("/api/projeto2/comparar-k")
+    def api_projeto2_comparar_k():
+        time = request.args.get("time", "Todos", type=str).strip()
+        return jsonify(servico_p2.parte1_comparar_k(time=time))
+
+    @rotas.get("/api/projeto2/parte2")
+    def api_projeto2_parte2():
+        k = request.args.get("k", 3, type=int)
+        return jsonify(servico_p2.parte2_multiplos_algoritmos(k=k))
+
+    @rotas.get("/api/projeto2/parte3")
+    def api_projeto2_parte3():
+        k = request.args.get("k", 4, type=int)
+        return jsonify(servico_p2.parte3_analise_global(k=k))
+
+    @rotas.get("/api/projeto2/teoria")
+    def api_projeto2_teoria():
+        return jsonify(servico_p2.teoria())
 
     return rotas
