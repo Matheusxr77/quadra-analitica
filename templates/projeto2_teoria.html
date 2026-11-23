@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Projeto 2 — Fundamentos Teóricos e Matemática{% endblock %}
+{% block conteudo %}
+<header class="cabecalho">
+  <div>
+    <p class="sobrelinha">PROJETO 2 · FUNDAMENTOS TEÓRICOS</p>
+    <h1>Teoria e Formulação Matemática dos Algoritmos</h1>
+    <p class="subtitulo">
+      Fundamentação conceitual e equações matemáticas exigidas para os <strong>5 algoritmos de clustering</strong>
+      e para o ciclo de iteração do K-Means.
+    </p>
+  </div>
+  <div class="status"><i></i> Formulações Formais</div>
+</header>
+
+<!-- Navegação Rápida entre as Seções do Projeto 2 -->
+<nav class="abas-projeto2">
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">📋 Visão Geral &amp; Rubrica</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">🎯 Parte 1: K-Means (Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">⚡ Parte 2: 5 Algoritmos</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">🌐 Parte 3: Liga (30 Times)</a>
+  <a class="aba-item ativa" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">📐 Fundamentos Teóricos</a>
+</nav>
+
+<!-- SEÇÃO 1: Teoria do K-Means (7 Itens do Enunciado) -->
+<section class="painel secao-inferior" id="secao-teoria-kmeans" style="margin-top: 24px;">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">PARTE 1 DO EDITAL</p>
+      <h2>Fundamentos Teóricos do Algoritmo K-Means</h2>
+      <p>Explicação detalhada dos 7 tópicos exigidos no enunciado com suas respectivas formulações matemáticas.</p>
+    </div>
+  </div>
+
+  <div class="grade-cartoes-texto" style="margin-top: 18px;">
+    {% for topico in teoria.kmeans.topicos %}
+    <article class="cartao-texto">
+      <h4>{{ topico.item }}</h4>
+      <p class="cartao-paragrafo">{{ topico.explicacao }}</p>
+      <div class="bloco-formula" style="margin-top: 10px;">
+        <div class="formula">
+          <code>{{ topico.formula }}</code>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- SEÇÃO 2: Teoria dos 5 Algoritmos Implementados -->
+<section class="painel secao-inferior" id="secao-cinco-algoritmos">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">PARTE 2 DO EDITAL</p>
+      <h2>Fundamentos e Matemática dos 5 Algoritmos de Clustering</h2>
+      <p>Visão conceitual, equações governantes, pontos fortes e limitações de cada paradigma.</p>
+    </div>
+  </div>
+
+  <div class="grade-cartoes-texto" style="margin-top: 18px;">
+    {% for algo in teoria.algoritmos %}
+    <article class="cartao-texto">
+      <h4>{{ algo.nome }}</h4>
+      <p class="cartao-sub">{{ algo.categoria }}</p>
+      <p class="cartao-paragrafo">{{ algo.resumo }}</p>
+      
+      <div class="bloco-formula" style="margin: 10px 0;">
+        <span class="rotulo" style="color: var(--azul); font-size: 11px; font-weight: 700;">FORMULAÇÃO MATEMÁTICA:</span>
+        <div class="formula">
+          <code>{{ algo.matematica }}</code>
+        </div>
+      </div>
+
+      <dl>
+        <dt style="color: var(--verde);">Vantagens / Pontos Fortes:</dt>
+        <dd>{{ algo.pontos_fortes }}</dd>
+        <dt style="color: var(--laranja); margin-top: 6px;">Premissas e Limitações:</dt>
+        <dd>{{ algo.limitacoes }}</dd>
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Projeto 2 — Hub de Avaliação e Visão Geral{% endblock %}
+{% block conteudo %}
+<header class="cabecalho">
+  <div>
+    <p class="sobrelinha">LABORATÓRIO DE CIÊNCIA DE DADOS · 2026.2</p>
+    <h1>PROJETO 2 — Agrupamento e Descoberta de Padrões</h1>
+    <p class="subtitulo">
+      Painel central de avaliação dos requisitos do <strong>Projeto 2</strong>: Clustering com K-Means,
+      Múltiplos Algoritmos e Análise Global da Liga NBA.
+    </p>
+  </div>
+  <div class="status"><i></i> Requisitos Mapeados</div>
+</header>
+
+<!-- Navegação Rápida entre as Seções do Projeto 2 -->
+<nav class="abas-projeto2">
+  <a class="aba-item ativa" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">📋 Visão Geral &amp; Rubrica</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">🎯 Parte 1: K-Means (Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">⚡ Parte 2: 5 Algoritmos</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">🌐 Parte 3: Liga (30 Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">📐 Fundamentos Teóricos</a>
+</nav>
+
+<!-- Cards com as 3 Partes do Projeto 2 -->
+<section class="grade-tres" style="margin-top: 24px;">
+  <article class="painel cartao-projeto">
+    <div class="tag-etapa">PARTE 1</div>
+    <h3>K-Means nos Times Selecionados</h3>
+    <p class="cartao-sub">Dallas Mavericks e Indiana Pacers</p>
+    <p class="cartao-desc">
+      Aplicação do algoritmo K-Means nas 7 variáveis canônicas (PTS, REB, AST, STL, BLK, PF, FG3M).
+      Seleção interativa de K (2, 3 e 4), caracterização tática dos clusters, todos os 7 gráficos e Silhouette Score.
+    </p>
+    <ul class="lista-itens-curta">
+      <li>✓ Filtro interativo de K (2, 3, 4) e Time</li>
+      <li>✓ 7 gráficos canônicos completos</li>
+      <li>✓ Caracterização tática dos clusters</li>
+      <li>✓ Justificativa formal de hiperparâmetros</li>
+    </ul>
+    <a class="botao-principal" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">Abrir Parte 1 →</a>
+  </article>
+
+  <article class="painel cartao-projeto">
+    <div class="tag-etapa">PARTE 2</div>
+    <h3>Múltiplos Algoritmos de Clustering</h3>
+    <p class="cartao-sub">5 Paradigmas Comparados</p>
+    <p class="cartao-desc">
+      Implementação comparativa entre K-Means, Agrupamento Hierárquico (Ward), DBSCAN,
+      Gaussian Mixture Models (GMM) e Spectral Clustering para tomada de decisão.
+    </p>
+    <ul class="lista-itens-curta">
+      <li>✓ K-Means, Hierárquico, DBSCAN, GMM e Spectral</li>
+      <li>✓ Tabela comparativa padronizada</li>
+      <li>✓ Métricas: Silhouette, Davies-Bouldin, Calinski</li>
+      <li>✓ Teoria matemática dos 5 algoritmos</li>
+    </ul>
+    <a class="botao-principal" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">Abrir Parte 2 →</a>
+  </article>
+
+  <article class="painel cartao-projeto">
+    <div class="tag-etapa">PARTE 3</div>
+    <h3>Análise Global de Toda a Liga</h3>
+    <p class="cartao-sub">Todos os 30 Times da NBA</p>
+    <p class="cartao-desc">
+      Mudança de estratégia: escala de partidas para o nível de franquias. Respostas empíricas
+      fundamentadas para as 6 perguntas essenciais do professor sobre a dinâmica do basquete.
+    </p>
+    <ul class="lista-itens-curta">
+      <li>✓ Base integral de 30 equipes da NBA</li>
+      <li>✓ Resposta às 6 perguntas do enunciado</li>
+      <li>✓ Correlação PTS vs AST (r = 0,55)</li>
+      <li>✓ Identificação de arquétipos ofensivos/defensivos</li>
+    </ul>
+    <a class="botao-principal" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">Abrir Parte 3 →</a>
+  </article>
+</section>
+
+<!-- Matriz de Avaliação dos Requisitos (Checklist do Professor) -->
+<section class="painel secao-inferior">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">CHECKLIST DE CONFORMIDADE COM O ENUNCIADO</p>
+      <h2>Matriz de Avaliação de Requisitos do Projeto 2</h2>
+      <p>Use esta tabela para validar de forma rápida e transparente cada item exigido no edital do Prof. Ryan Azevedo.</p>
+    </div>
+    <span class="badge" style="color: var(--verde);">100% dos requisitos cobertos</span>
+  </div>
+
+  <div class="tabela-rolavel" style="margin-top: 18px;">
+    <table class="tabela-medida">
+      <thead>
+        <tr>
+          <th>Seção</th>
+          <th>Requisito do Enunciado</th>
+          <th>Como o Sistema Atende</th>
+          <th>Status</th>
+          <th>Acesso Rápido</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- PARTE 1 -->
+        <tr class="inicio-grupo">
+          <td><strong>Parte 1</strong></td>
+          <td>Implementação K-Means (PTS, REB, AST, STL, BLK, PF, FG3M)</td>
+          <td>Algoritmo ajustado sobre as 7 métricas canônicas com StandardScaler nos 149 jogos dos Mavericks e Pacers.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">Ir para Parte 1</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>Escolha interativa de K (mínimo K = 2, 3 e 4)</td>
+          <td>Seletor reativo de K (K=2, 3, 4 e 5) e seletor de time (Todos, Mavericks, Pacers) com recálculo instantâneo.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">Ver Seletor</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>Caracterização dos clusters (maior pontuação, assistências, rebotes, 3P, faltas, equilibrado)</td>
+          <td>Cards táticos calculam dinamicamente a maior pontuação, assistências, rebotes, triplas, faltas e perfil equilibrado.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}#secao-perfis">Ver Perfis</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>Justificativas de hiperparâmetros (n_clusters, init, n_init, random_state)</td>
+          <td>Painel técnico dedicado com fundamentação teórica e empírica de cada parâmetro do K-Means.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}#secao-hiperparametros">Ver Justificativas</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>7 Gráficos Canônicos (Scatter, BoxPlot, Radar, Histograma, Linha temporal, Barras, Comparação de K)</td>
+          <td>Todos os 7 gráficos construídos com Chart.js, títulos, eixos rotulados, unidades e legendas padronizadas.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}#secao-graficos">Ver 7 Gráficos</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>Conclusão: Silhouette Score para cada K e justificativa de escolha</td>
+          <td>Cálculo do Silhouette Score, Inércia e DB para K=2, 3 e 4, com justificativa aprofundada da configuração K=3.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}#secao-conclusao">Ver Conclusão</a></td>
+        </tr>
+        <tr>
+          <td>Parte 1</td>
+          <td>Teoria do K-Means (Centroide, Distância Euclidiana, Atribuição, Recálculo, Convergência, Custo WCSS, Inicialização)</td>
+          <td>Seção teórica detalhada com conceitos e fórmulas matemáticas exatas de cada um dos 7 tópicos exigidos.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">Ver Teoria K-Means</a></td>
+        </tr>
+
+        <!-- PARTE 2 -->
+        <tr class="inicio-grupo">
+          <td><strong>Parte 2</strong></td>
+          <td>Implementar 4 algoritmos adicionais (Hierarchical, DBSCAN, GMM, Spectral)</td>
+          <td>Implementados em Python com scikit-learn nos mesmos dados padronizados com hiperparâmetros justificados.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">Ir para Parte 2</a></td>
+        </tr>
+        <tr>
+          <td>Parte 2</td>
+          <td>Comparação de todos os resultados obtidos (tabelas e gráficos para tomada de decisão)</td>
+          <td>Tabela comparativa padronizada com Silhouette, Davies-Bouldin, Calinski-Harabasz, contagens de ruído e gráficos de dispersão.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}#secao-comparativo">Ver Tabela</a></td>
+        </tr>
+        <tr>
+          <td>Parte 2</td>
+          <td>Teoria de cada algoritmo (5 algoritmos com matemática)</td>
+          <td>Exposição matemática formal e conceitual de K-Means, Ward Hierarchical, DBSCAN, GMM e Spectral Clustering.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}#secao-cinco-algoritmos">Ver Teoria dos 5</a></td>
+        </tr>
+
+        <!-- PARTE 3 -->
+        <tr class="inicio-grupo">
+          <td><strong>Parte 3</strong></td>
+          <td>Execução para todos os times do dataset (Liga completa NBA)</td>
+          <td>Base integral com os 30 times (2.238 jogos) processada com agregação multivariada por equipe.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">Ir para Parte 3</a></td>
+        </tr>
+        <tr>
+          <td>Parte 3</td>
+          <td>Mudança de estratégia com ênfase nos times</td>
+          <td>Foco nas franquias, mapeando arquétipos táticos da liga e segmentação em 4 perfis competitivos.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">Ver Análise da Liga</a></td>
+        </tr>
+        <tr>
+          <td>Parte 3</td>
+          <td>Responder às 6 perguntas fundamentais do professor</td>
+          <td>Respostas analíticas textuais acompanhadas de dados, coeficientes de correlação (Pearson r=0,55) e tabela completa das equipes.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><a class="link-acao" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}#secao-perguntas">Ver 6 Respostas</a></td>
+        </tr>
+
+        <!-- EXIGÊNCIAS MÍNIMAS -->
+        <tr class="inicio-grupo">
+          <td><strong>Geral</strong></td>
+          <td>Sistema web interativo em Python (Flask)</td>
+          <td>Aplicação web estruturada em arquitetura de camadas com Flask, Pandas e Scikit-Learn.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><span class="texto-suave">app.py</span></td>
+        </tr>
+        <tr>
+          <td>Geral</td>
+          <td>Gráficos com título, eixos rotulados, unidades e legendas</td>
+          <td>Todos os gráficos de barras, boxplot, dispersão, radar e histograma seguem o padrão visual estrito.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><span class="texto-suave">painel.js / estilos.css</span></td>
+        </tr>
+        <tr>
+          <td>Geral</td>
+          <td>Tabelas padronizadas (mesmas casas decimais e unidades)</td>
+          <td>Formatação uniforme em pt-BR com 2 casas decimais e unidades explícitas no cabeçalho ou legenda.</td>
+          <td><span class="status-badge ok">Atendido</span></td>
+          <td><span class="texto-suave">Padronização pt-BR</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

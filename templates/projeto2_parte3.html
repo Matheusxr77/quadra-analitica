@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Projeto 2 — Parte 3: Análise Global da Liga{% endblock %}
+{% block bibliotecas %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>
+{% endblock %}
+
+{% block conteudo %}
+<header class="cabecalho">
+  <div>
+    <p class="sobrelinha">PROJETO 2 · PARTE 3</p>
+    <h1>Análise Global da Liga NBA (30 Times)</h1>
+    <p class="subtitulo">
+      Mudança de estratégia: escala de partidas individuais para o nível de franquias.
+      Segmentação das <strong>30 equipes da NBA</strong> e respostas empíricas às 6 perguntas fundamentais do enunciado.
+    </p>
+  </div>
+  <div class="status"><i></i> 30 Franquias Analisadas</div>
+</header>
+
+<!-- Navegação Rápida entre as Seções do Projeto 2 -->
+<nav class="abas-projeto2">
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">📋 Visão Geral &amp; Rubrica</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">🎯 Parte 1: K-Means (Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">⚡ Parte 2: 5 Algoritmos</a>
+  <a class="aba-item ativa" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">🌐 Parte 3: Liga (30 Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">📐 Fundamentos Teóricos</a>
+</nav>
+
+<!-- Seletor Interativo de K para os Times -->
+<section class="controles painel" style="margin-top: 24px;">
+  <div>
+    <label for="seletor-p3-k">QUANTIDADE DE PERFIS DE EQUIPES (K)</label>
+    <select id="seletor-p3-k">
+      <option value="3">K = 3 grupos de equipes</option>
+      <option value="4" selected>K = 4 grupos de equipes (Recomendado)</option>
+      <option value="5">K = 5 grupos de equipes</option>
+    </select>
+  </div>
+  <div class="nota-controle">
+    O agrupamento no nível de equipes agrupa as médias das 30 franquias ao longo da temporada regular nas 7 variáveis canônicas.
+  </div>
+</section>
+
+<!-- Respostas Estruturadas às 6 Perguntas Centrais do Professor -->
+<section class="painel secao-inferior" id="secao-perguntas">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">ANÁLISE CRÍTICA CONTEXTUALIZADA</p>
+      <h2>Respostas às 6 Questões Fundamentais do Enunciado</h2>
+      <p>Investigação empírica orientada a dados no contexto técnico e tático do basquete profissional contemporâneo.</p>
+    </div>
+  </div>
+
+  <div class="grade-cartoes-texto" style="margin-top: 18px;" id="container-respostas-p3">
+    <!-- Preenchido dinamicamente com as perguntas e respostas analíticas -->
+  </div>
+</section>
+
+<!-- Gráficos da Liga: Dispersão Multivariada e Relação PTS vs AST -->
+<section class="grade-graficos" style="margin-top: 24px;">
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">MAPA TÁTICO DA LIGA</p>
+        <h3>Projeção 2D dos 30 Times da NBA (PCA)</h3>
+        <p>Posicionamento de cada franquia de acordo com a semelhança estatística global</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p3-scatter-times"></canvas>
+    </div>
+  </article>
+
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">RELAÇÃO FUNDAMENTAL</p>
+        <h3>Pontos vs. Assistências (r = 0,55)</h3>
+        <p>Verificação empírica: times com muitos pontos também possuem alto volume de assistências</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p3-pts-ast"></canvas>
+    </div>
+  </article>
+</section>
+
+<!-- Tabela Padronizada de Todos os 30 Times da NBA por Cluster -->
+<section class="painel secao-inferior">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">BASE COMPLETA PADRONIZADA</p>
+      <h2>Classificação das 30 Equipes da NBA por Cluster</h2>
+      <p>Médias da temporada regular em cada métrica canônica (em unidades por partida com 2 casas decimais).</p>
+    </div>
+  </div>
+
+  <div class="tabela-rolavel" style="margin-top: 16px;">
+    <table class="tabela-medida" id="tabela-p3-times">
+      <thead>
+        <tr>
+          <th>Equipe (Franquia)</th>
+          <th>Cluster / Perfil</th>
+          <th class="num">PTS (pts)</th>
+          <th class="num">REB (reb)</th>
+          <th class="num">AST (ast)</th>
+          <th class="num">STL (roubos)</th>
+          <th class="num">BLK (tocos)</th>
+          <th class="num">PF (faltas)</th>
+          <th class="num">FG3M (3P)</th>
+        </tr>
+      </thead>
+      <tbody id="corpo-tabela-p3-times">
+        <tr><td colspan="9">Carregando dados das 30 equipes da NBA…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

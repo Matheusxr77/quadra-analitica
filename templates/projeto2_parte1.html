@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block titulo %}Quadra Analítica | Projeto 2 — Parte 1: K-Means{% endblock %}
+{% block bibliotecas %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.2.0/build/index.umd.min.js"></script>
+{% endblock %}
+
+{% block conteudo %}
+<header class="cabecalho">
+  <div>
+    <p class="sobrelinha">PROJETO 2 · PARTE 1</p>
+    <h1>K-Means nos Times do Grupo</h1>
+    <p class="subtitulo">
+      Análise de agrupamento das 149 partidas dos <strong>Dallas Mavericks</strong> e <strong>Indiana Pacers</strong>
+      nas 7 variáveis canônicas: Pontos, Rebotes, Assistências, STL, BLK, PF e FG3M.
+    </p>
+  </div>
+  <div class="status" id="badge-status-p1"><i></i> K-Means Calculado</div>
+</header>
+
+<!-- Navegação Rápida entre as Seções do Projeto 2 -->
+<nav class="abas-projeto2">
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_visao_geral') }}">📋 Visão Geral &amp; Rubrica</a>
+  <a class="aba-item ativa" href="{{ url_for('relatorio.pagina_projeto2_parte1') }}">🎯 Parte 1: K-Means (Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte2') }}">⚡ Parte 2: 5 Algoritmos</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_parte3') }}">🌐 Parte 3: Liga (30 Times)</a>
+  <a class="aba-item" href="{{ url_for('relatorio.pagina_projeto2_teoria') }}">📐 Fundamentos Teóricos</a>
+</nav>
+
+<!-- Seletor Interativo de K, Time e Variável -->
+<section class="controles painel" style="margin-top: 24px;">
+  <div>
+    <label for="seletor-p1-time">TIME</label>
+    <select id="seletor-p1-time">
+      <option value="Todos">Ambos os Times (149 jogos)</option>
+      {% for time in times %}
+      <option value="{{ time }}">{{ time }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="seletor-p1-k">QUANTIDADE DE CLUSTERS (K)</label>
+    <select id="seletor-p1-k">
+      <option value="2">K = 2 clusters</option>
+      <option value="3" selected>K = 3 clusters (Recomendado)</option>
+      <option value="4">K = 4 clusters</option>
+      <option value="5">K = 5 clusters</option>
+    </select>
+  </div>
+  <div>
+    <label for="seletor-p1-var">VARIÁVEL PARA BOXPLOT/HISTOGRAMA</label>
+    <select id="seletor-p1-var">
+      <option value="PTS">PTS — Pontos</option>
+      <option value="REB">REB — Rebotes</option>
+      <option value="AST">AST — Assistências</option>
+      <option value="STL">STL — Roubos de bola</option>
+      <option value="BLK">BLK — Bloqueios</option>
+      <option value="PF">PF — Faltas pessoais</option>
+      <option value="FG3M">FG3M — Cestas de 3 convertidas</option>
+    </select>
+  </div>
+  <div class="nota-controle">
+    Alterne K ou o time para recalcular dinamicamente os 7 gráficos e interpretações.
+  </div>
+</section>
+
+<!-- Cartões de Métricas de Validação do Agrupamento -->
+<section class="grade-cartoes" id="metricas-kmeans">
+  <div class="cartao">
+    <div class="rotulo">Silhouette Score</div>
+    <div class="valor" id="val-silhueta">—</div>
+    <div class="detalhe">Coesão e separabilidade (-1 a +1)</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Inércia (WCSS)</div>
+    <div class="valor" id="val-inercia">—</div>
+    <div class="detalhe">Soma quadrática intra-cluster</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Davies-Bouldin</div>
+    <div class="valor" id="val-db">—</div>
+    <div class="detalhe">Menor valor indica melhor separação</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Calinski-Harabasz</div>
+    <div class="valor" id="val-ch">—</div>
+    <div class="detalhe">Razão de dispersão entre/intra</div>
+  </div>
+</section>
+
+<!-- Caracterização dos Clusters Exigidos no Enunciado -->
+<section class="painel secao-inferior" id="secao-perfis">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">CARACTERIZAÇÃO TÁTICA DOS CLUSTERS</p>
+      <h2>Padrões Identificados nas Partidas Analisadas</h2>
+      <p>Mapeamento dos 6 arquétipos solicitados expressamente no edital do Projeto 2.</p>
+    </div>
+  </div>
+
+  <div class="grade-tres" id="container-destaques-enunciado">
+    <!-- Preenchido via JavaScript dinamicamente com base nas médias -->
+  </div>
+</section>
+
+<!-- Seção dos 7 Gráficos Exigidos -->
+<div class="titulo-secao" id="secao-graficos">
+  <div>
+    <p class="sobrelinha">EXIGÊNCIA METODOLÓGICA</p>
+    <h2>Os 7 Gráficos Canônicos do K-Means</h2>
+  </div>
+  <span class="badge">Padronização visual e unidades explícitas</span>
+</div>
+
+<!-- Gráficos 1 e 2: Scatter Plot e Radar Chart -->
+<section class="grade-graficos">
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 1 DE 7</p>
+        <h3>Gráfico de Dispersão (Scatter Plot 2D)</h3>
+        <p>Projeção dos jogos via PCA com posicionamento dos centroides dos clusters</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-scatter"></canvas>
+    </div>
+  </article>
+
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 2 DE 7</p>
+        <h3>Radar Chart — Perfil Estatístico dos Clusters</h3>
+        <p>Z-scores das 7 variáveis canônicas sobrepostos para comparação de assinaturas táticas</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-radar"></canvas>
+    </div>
+  </article>
+</section>
+
+<!-- Gráficos 3 e 4: BoxPlot e Histograma -->
+<section class="grade-graficos" style="margin-top: 16px;">
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 3 DE 7</p>
+        <h3>BoxPlot por Cluster (<span class="rotulo-var-ativa">PTS</span>)</h3>
+        <p>Distribuição de Tukey: mediana, quartis Q1-Q3, bigodes e outliers por agrupamento</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-boxplot"></canvas>
+    </div>
+  </article>
+
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 4 DE 7</p>
+        <h3>Histograma — Distribuição por Variável (<span class="rotulo-var-ativa">PTS</span>)</h3>
+        <p>Frequência absoluta de partidas por faixa de valor, segmentada pelos clusters</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-histograma"></canvas>
+    </div>
+  </article>
+</section>
+
+<!-- Gráficos 5 e 6: Linha Temporal e Barras de Jogos -->
+<section class="grade-graficos" style="margin-top: 16px;">
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 5 DE 7</p>
+        <h3>Gráfico de Linha — Evolução dos Clusters na Temporada</h3>
+        <p>Cronologia das partidas ao longo das datas para detectar fases ou sequências táticas</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-linha"></canvas>
+    </div>
+  </article>
+
+  <article class="painel">
+    <div class="cabecalho-painel">
+      <div>
+        <p class="sobrelinha">GRÁFICO 6 DE 7</p>
+        <h3>Quantidade de Jogos por Cluster (Barras)</h3>
+        <p>Volume de partidas atribuídas a cada cluster e sua respectiva proporção (%)</p>
+      </div>
+    </div>
+    <div class="area-grafico">
+      <canvas id="grafico-p1-barras"></canvas>
+    </div>
+  </article>
+</section>
+
+<!-- Gráfico 7: Comparação entre K=2, K=3 e K=4 -->
+<section class="painel secao-inferior" id="secao-conclusao">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">GRÁFICO 7 DE 7 &amp; CONCLUSÃO</p>
+      <h2>Comparação de Silhouette Score e Inércia (K=2, K=3 e K=4)</h2>
+      <p>Avaliação quantitativa de validação intrínseca para justificar a escolha ideal do número de clusters.</p>
+    </div>
+  </div>
+
+  <div class="grade-graficos" style="margin-top: 16px;">
+    <article class="painel">
+      <div class="cabecalho-painel">
+        <div>
+          <h3>Curva de Silhouette e Inércia por K</h3>
+          <p>Equilíbrio entre coesão matemática e discernibilidade tática</p>
+        </div>
+      </div>
+      <div class="area-grafico">
+        <canvas id="grafico-p1-comparacao-k"></canvas>
+      </div>
+    </article>
+
+    <article class="painel leitura">
+      <div class="cabecalho-painel">
+        <div>
+          <p class="sobrelinha">JUSTIFICATIVA METODOLÓGICA</p>
+          <h3>Qual configuração escolher e por quê?</h3>
+        </div>
+      </div>
+      <div id="texto-justificativa-k" style="margin-top: 12px; font-size: 13px; line-height: 1.7; color: #c5d0dc;">
+        Carregando justificativa analítica…
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- Tabela Padronizada de Médias por Cluster -->
+<section class="painel secao-inferior">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">MÉDIAS CENTRAIS</p>
+      <h2>Tabela Padronizada de Desempenho por Cluster</h2>
+      <p>Valores médios absolutos para cada uma das 7 variáveis canônicas em unidades por jogo.</p>
+    </div>
+  </div>
+
+  <div class="tabela-rolavel">
+    <table id="tabela-medias-clusters" class="tabela-medida">
+      <thead>
+        <tr>
+          <th>Cluster</th>
+          <th>Perfil Tático Predominante</th>
+          <th class="num">Jogos (n)</th>
+          <th class="num">PTS (pts)</th>
+          <th class="num">REB (reb)</th>
+          <th class="num">AST (ast)</th>
+          <th class="num">STL (roubos)</th>
+          <th class="num">BLK (tocos)</th>
+          <th class="num">PF (faltas)</th>
+          <th class="num">FG3M (3P conv.)</th>
+        </tr>
+      </thead>
+      <tbody id="corpo-tabela-medias-clusters">
+        <tr><td colspan="10">Carregando tabela…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="nota-tabela">
+    Todas as médias expressas em unidades por partida com 2 casas decimais padronizadas.
+    O algoritmo K-Means foi treinado sobre os dados com padronização z-score (StandardScaler), garantindo que
+    variáveis de maior magnitude absoluta (como PTS ~115) não dominem artificialmente variáveis de menor escala (como BLK ~5).
+  </p>
+</section>
+
+<!-- Justificativa dos Hiperparâmetros do K-Means -->
+<section class="painel secao-inferior" id="secao-hiperparametros">
+  <div class="cabecalho-painel">
+    <div>
+      <p class="sobrelinha">RIGOR TÉCNICO EXIGIDO PELO ENUNCIADO</p>
+      <h2>Justificativa dos Hiperparâmetros do K-Means</h2>
+      <p>Fundamentação teórica para cada decisão de parametrização adotada no algoritmo.</p>
+    </div>
+  </div>
+
+  <div class="grade-cartoes-texto" style="margin-top: 16px;">
+    <article class="cartao-texto">
+      <h4>n_clusters (Quantidade de clusters K)</h4>
+      <p class="cartao-sub">Valores avaliados: K ∈ {2, 3, 4}</p>
+      <p class="cartao-paragrafo">
+        <strong>Justificativa:</strong> Permitimos ao avaliador alternar entre K=2, 3 e 4 no seletor reativo.
+        Metodologicamente, adotamos <strong>K = 3</strong> como a configuração padrão e ótima para o basquete profissional.
+        K=2 colapsa a realidade em uma dicotomia simplista de jogos de alto versus baixo ritmo, perdendo a especialização defensiva.
+        K=4 produz sobreposição de centroides e fragmentação excessiva, diminuindo o Silhouette Score.
+        K=3 equilibra separabilidade estatística e clareza tática (ataque explosivo, garrafão/defesa e equilíbrio cadenciado).
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>init (Método de inicialização)</h4>
+      <p class="cartao-sub">Valor adotado: 'k-means++'</p>
+      <p class="cartao-paragrafo">
+        <strong>Justificativa:</strong> A inicialização aleatória padrão (Forgy/Random Partition) é notoriamente sensível
+        a escolhas iniciais desfavoráveis, podendo convergir para mínimos locais estagnados.
+        O método <code>k-means++</code> escolhe o primeiro centroide aleatoriamente e cada centroide subsequente com probabilidade
+        proporcional ao quadrado da distância mínima ao centroide mais próximo ($D(x)^2$).
+        Isso espalha geometricamente os pontos de partida no espaço $\mathbb{R}^7$, acelerando a convergência e garantindo limite teórico de erro comprovado de $O(\log K)$.
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>n_init (Número de reinicializações independentes)</h4>
+      <p class="cartao-sub">Valor adotado: n_init = 10</p>
+      <p class="cartao-paragrafo">
+        <strong>Justificativa:</strong> Como a função de custo do K-Means (WCSS) não é convexa, executar o algoritmo apenas uma vez
+        pode resultar em um agrupamento subótimo. Fixar <code>n_init = 10</code> instrui o sistema a executar o algoritmo
+        10 vezes completas com diferentes sementes de centroides do <code>k-means++</code>, selecionando automaticamente
+        o modelo final com a menor inércia (WCSS) global, assegurando estabilidade analítica de alto nível.
+      </p>
+    </article>
+
+    <article class="cartao-texto">
+      <h4>random_state (Controle de reprodutibilidade)</h4>
+      <p class="cartao-sub">Valor adotado: random_state = 42</p>
+      <p class="cartao-paragrafo">
+        <strong>Justificativa:</strong> Fixar o gerador pseudoaleatório (PRNG) em <code>random_state = 42</code> é indispensável
+        para garantir a reprodutibilidade científica e avaliativa exigida pelo professor.
+        Dessa forma, qualquer membro da banca ou grupo que execute o sistema localmente ou na nuvem obterá exatamente
+        os mesmos centroides, as mesmas atribuições de jogos e os mesmos valores numéricos de silhueta.
+      </p>
+    </article>
+  </div>
+</section>
+{% endblock %}
