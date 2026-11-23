@@ -825,3 +825,639 @@ async function carregarSintese() {
 
 carregarPerfilZ();
 carregarSintese();
+
+// ===========================================================================
+// PROJETO 2: NAVEGAÇÃO SEGREGADA E MÓDULOS DE CLUSTERING
+// ===========================================================================
+
+function configurarFiltroMenuProjetos() {
+  const botoes = document.querySelectorAll(".btn-filtro-proj");
+  const menuP1 = document.getElementById("menu-projeto-1");
+  const menuP2 = document.getElementById("menu-projeto-2");
+  if (!botoes.length || !menuP1 || !menuP2) return;
+
+  function aplicarFiltro(alvo, salvar = true) {
+    botoes.forEach((btn) => {
+      btn.classList.toggle("ativo", btn.getAttribute("data-alvo") === alvo);
+    });
+
+    if (alvo === "p1") {
+      menuP1.classList.remove("ocultar-bloco-menu");
+      menuP2.classList.add("ocultar-bloco-menu");
+    } else if (alvo === "p2") {
+      menuP1.classList.add("ocultar-bloco-menu");
+      menuP2.classList.remove("ocultar-bloco-menu");
+    } else {
+      menuP1.classList.remove("ocultar-bloco-menu");
+      menuP2.classList.remove("ocultar-bloco-menu");
+    }
+
+    if (salvar) {
+      try { localStorage.setItem("quadra_filtro_projeto", alvo); } catch (e) {}
+    }
+  }
+
+  botoes.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      aplicarFiltro(btn.getAttribute("data-alvo"));
+    });
+  });
+
+  // Estado inicial inteligente
+  let salvo = null;
+  try { salvo = localStorage.getItem("quadra_filtro_projeto"); } catch (e) {}
+
+  if (window.location.pathname.startsWith("/projeto2")) {
+    aplicarFiltro(salvo === "todos" ? "todos" : "p2", false);
+  } else if (salvo) {
+    aplicarFiltro(salvo, false);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Projeto 2 - Parte 1: K-Means Interativo
+// ---------------------------------------------------------------------------
+
+let dadosP1Cache = null;
+
+async function carregarProjeto2Parte1() {
+  const seletorTime = document.getElementById("seletor-p1-time");
+  const seletorK = document.getElementById("seletor-p1-k");
+  const seletorVar = document.getElementById("seletor-p1-var");
+  if (!seletorTime || !seletorK) return;
+
+  async function atualizar() {
+    const time = seletorTime.value;
+    const k = seletorK.value;
+    const varAtiva = seletorVar ? seletorVar.value : "PTS";
+
+    document.querySelectorAll(".rotulo-var-ativa").forEach((el) => el.textContent = varAtiva);
+
+    const [resP1, resComp] = await Promise.all([
+      fetch(`/api/projeto2/parte1?time=${encodeURIComponent(time)}&k=${k}`).then((r) => r.json()),
+      fetch(`/api/projeto2/comparar-k?time=${encodeURIComponent(time)}`).then((r) => r.json()),
+    ]);
+    dadosP1Cache = resP1;
+
+    // 1. Atualizar métricas nos cards
+    const elSil = document.getElementById("val-silhueta");
+    if (elSil) elSil.textContent = formatar(resP1.score_silhueta, 3);
+    const elIne = document.getElementById("val-inercia");
+    if (elIne) elIne.textContent = formatar(resP1.inercia, 1);
+    const elDb = document.getElementById("val-db");
+    if (elDb) elDb.textContent = formatar(resP1.davies_bouldin, 3);
+    const elCh = document.getElementById("val-ch");
+    if (elCh) elCh.textContent = formatar(resP1.calinski_harabasz, 1);
+
+    // 2. Renderizar Destaques Táticos do Enunciado
+    const containerDestaques = document.getElementById("container-destaques-enunciado");
+    if (containerDestaques && resP1.destaques_enunciado) {
+      const d = resP1.destaques_enunciado;
+      const cardsHtml = [
+        ["Maior Pontuação", d.maior_pontuacao.cluster, `${formatar(d.maior_pontuacao.valor)} pts`, d.maior_pontuacao.descricao],
+        ["Maior Assistências", d.maior_assistencias.cluster, `${formatar(d.maior_assistencias.valor)} ast`, d.maior_assistencias.descricao],
+        ["Maior Rebotes", d.maior_rebotes.cluster, `${formatar(d.maior_rebotes.valor)} reb`, d.maior_rebotes.descricao],
+        ["Mais Cestas de 3P", d.maior_tres_pontos.cluster, `${formatar(d.maior_tres_pontos.valor)} 3P`, d.maior_tres_pontos.descricao],
+        ["Mais Faltas", d.maior_faltas.cluster, `${formatar(d.maior_faltas.valor)} faltas`, d.maior_faltas.descricao],
+        ["Características Equilibradas", d.equilibrado.cluster, `${formatar(d.equilibrado.valor)} pts`, d.equilibrado.descricao],
+      ];
+      containerDestaques.innerHTML = cardsHtml.map((c) => `
+        <article class="destaque-tatico-item">
+          <div class="rotulo-item">${escaparHtml(c[0])}</div>
+          <div class="cluster-nome">${escaparHtml(c[1])}</div>
+          <div class="cluster-val">${escaparHtml(c[2])}</div>
+          <p class="cluster-desc">${escaparHtml(c[3])}</p>
+        </article>
+      `).join("");
+    }
+
+    // 3. Gráfico 1: Scatter Plot 2D (PCA)
+    const elScatter = document.getElementById("grafico-p1-scatter");
+    if (elScatter && typeof Chart !== "undefined") {
+      destruirGrafico("p1_scatter");
+      const datasetsScatter = [];
+      const coresClusters = ["#55b6ff", "#ffad66", "#64d9a0", "#b388ff", "#ff7597"];
+
+      resP1.clusters.forEach((c) => {
+        const pts = resP1.pontos_scatter.filter((p) => p.cluster === c.id);
+        datasetsScatter.push({
+          label: `${c.nome}: ${c.destaque}`,
+          data: pts.map((p) => ({ x: p.x, y: p.y, pts: p.pts, ast: p.ast, reb: p.reb, time: p.time, data: p.data })),
+          backgroundColor: c.cor,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+        });
+      });
+
+      // Adicionar centroides destacados
+      datasetsScatter.push({
+        label: "Centroides (Projetados)",
+        data: resP1.centroides_scatter.map((ct) => ({ x: ct.x, y: ct.y })),
+        backgroundColor: "#ffffff",
+        borderColor: "#ffd166",
+        borderWidth: 2,
+        pointStyle: "crossRot",
+        pointRadius: 10,
+        pointHoverRadius: 13,
+      });
+
+      graficos.p1_scatter = new Chart(elScatter, {
+        type: "scatter",
+        data: { datasets: datasetsScatter },
+        options: opcoesPadrao({
+          titulo: `Projeção 2D das Partidas (PCA: ${resP1.pca_variancia_explicada[0]}% e ${resP1.pca_variancia_explicada[1]}% da variância)`,
+          eixoX: "Componente Principal 1 (Ritmo / Produção Ofensiva)",
+          eixoY: "Componente Principal 2 (Disputa Física / Garrafão)",
+          xLinear: true,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const p = ctx.raw;
+                if (!p.time) return "Centroide de Cluster";
+                return `${p.time} (${p.data}): ${formatar(p.pts)} PTS, ${formatar(p.ast)} AST, ${formatar(p.reb)} REB`;
+              },
+            },
+          },
+        }),
+      });
+    }
+
+    // 4. Gráfico 2: Radar Chart
+    const elRadar = document.getElementById("grafico-p1-radar");
+    if (elRadar && typeof Chart !== "undefined") {
+      destruirGrafico("p1_radar");
+      graficos.p1_radar = new Chart(elRadar, {
+        type: "radar",
+        data: resP1.radar,
+        options: {
+          maintainAspectRatio: false,
+          elements: { line: { borderWidth: 2 } },
+          scales: {
+            r: {
+              angleLines: { color: "#263546" },
+              grid: { color: "#263546" },
+              pointLabels: { color: "#cbd6e1", font: { size: 11, weight: "600" } },
+              ticks: { display: false, stepSize: 1 },
+            },
+          },
+          plugins: {
+            title: { display: true, text: "Assinatura Tática Normalizada dos Clusters (Z-Score)", color: "#e6edf5", font: { size: 13, weight: "600" } },
+            legend: { display: true, labels: { color: "#cbd6e1", usePointStyle: true } },
+          },
+        },
+      });
+    }
+
+    // 5. Gráfico 3: BoxPlot por Cluster
+    const elBoxplot = document.getElementById("grafico-p1-boxplot");
+    if (elBoxplot && typeof Chart !== "undefined" && resP1.boxplots[varAtiva]) {
+      destruirGrafico("p1_boxplot");
+      const boxData = resP1.boxplots[varAtiva];
+      graficos.p1_boxplot = new Chart(elBoxplot, {
+        type: "boxplot",
+        data: {
+          labels: boxData.map((b) => b.cluster_nome),
+          datasets: [{
+            label: `Distribuição de ${varAtiva}`,
+            data: boxData.map((b) => ({
+              min: b.min,
+              q1: b.q1,
+              median: b.mediana,
+              q3: b.q3,
+              max: b.max,
+              outliers: b.outliers,
+            })),
+            backgroundColor: boxData.map((b) => b.cor + "40"),
+            borderColor: boxData.map((b) => b.cor),
+            borderWidth: 1.5,
+            itemRadius: 3,
+          }],
+        },
+        options: opcoesPadrao({
+          titulo: `Boxplot de ${varAtiva} por Cluster`,
+          eixoX: "Cluster",
+          eixoY: `${varAtiva} (unidade por jogo)`,
+        }),
+      });
+    }
+
+    // 6. Gráfico 4: Histograma por Cluster
+    const elHist = document.getElementById("grafico-p1-histograma");
+    if (elHist && typeof Chart !== "undefined" && resP1.histogramas[varAtiva]) {
+      destruirGrafico("p1_hist");
+      const hData = resP1.histogramas[varAtiva];
+      graficos.p1_hist = new Chart(elHist, {
+        type: "bar",
+        data: {
+          labels: hData.bins,
+          datasets: hData.datasets,
+        },
+        options: opcoesPadrao({
+          titulo: `Distribuição das Partidas por Faixa de ${varAtiva}`,
+          eixoX: `${varAtiva} (${hData.unidade})`,
+          eixoY: "Número de Partidas",
+          beginAtZero: true,
+        }),
+      });
+    }
+
+    // 7. Gráfico 5: Linha de Evolução Temporal
+    const elLinha = document.getElementById("grafico-p1-linha");
+    if (elLinha && typeof Chart !== "undefined") {
+      destruirGrafico("p1_linha");
+      const ev = resP1.evolucao_temporal;
+      graficos.p1_linha = new Chart(elLinha, {
+        type: "line",
+        data: {
+          labels: ev.rotulos,
+          datasets: [
+            {
+              label: "Cluster Atribuído (0 a K-1)",
+              data: ev.clusters_atribuidos.map((c) => c + 1),
+              borderColor: "#55b6ff",
+              backgroundColor: "#55b6ff20",
+              stepped: true,
+              yAxisID: "yCluster",
+            },
+            {
+              label: "Pontos (PTS)",
+              data: ev.pts,
+              borderColor: "#ffad66",
+              backgroundColor: "transparent",
+              borderDash: [4, 4],
+              yAxisID: "yPts",
+            },
+          ],
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: "#8998aa", maxTicksLimit: 12 }, grid: { display: false } },
+            yCluster: {
+              type: "linear",
+              position: "left",
+              min: 1,
+              max: resP1.k,
+              ticks: { color: "#55b6ff", stepSize: 1 },
+              title: { display: true, text: "Cluster (1 a K)", color: "#55b6ff" },
+            },
+            yPts: {
+              type: "linear",
+              position: "right",
+              ticks: { color: "#ffad66" },
+              grid: { color: "#263546" },
+              title: { display: true, text: "PTS (pontos)", color: "#ffad66" },
+            },
+          },
+          plugins: {
+            title: { display: true, text: "Evolução Temporal dos Clusters ao Longo da Temporada", color: "#e6edf5", font: { size: 13, weight: "600" } },
+            legend: { display: true, labels: { color: "#cbd6e1" } },
+          },
+        },
+      });
+    }
+
+    // 8. Gráfico 6: Quantidade de Jogos por Cluster (Barras)
+    const elBarras = document.getElementById("grafico-p1-barras");
+    if (elBarras && typeof Chart !== "undefined") {
+      destruirGrafico("p1_barras");
+      const bData = resP1.barras_quantidade;
+      graficos.p1_barras = new Chart(elBarras, {
+        type: "bar",
+        data: {
+          labels: bData.labels,
+          datasets: [{
+            label: "Quantidade de Jogos",
+            data: bData.contagens,
+            backgroundColor: bData.cores,
+            borderRadius: 6,
+          }],
+        },
+        options: opcoesPadrao({
+          titulo: "Volume de Jogos por Cluster e Proporção",
+          eixoX: "Cluster",
+          eixoY: "Jogos Observados (n)",
+          beginAtZero: true,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.parsed.y} partidas (${bData.proporcoes[ctx.dataIndex]}% do total)`,
+            },
+          },
+        }),
+      });
+    }
+
+    // 9. Gráfico 7: Comparação entre K=2, 3 e 4
+    const elCompK = document.getElementById("grafico-p1-comparacao-k");
+    if (elCompK && typeof Chart !== "undefined" && resComp.grafico_comparacao) {
+      destruirGrafico("p1_comp_k");
+      const gK = resComp.grafico_comparacao;
+      graficos.p1_comp_k = new Chart(elCompK, {
+        type: "bar",
+        data: {
+          labels: gK.labels,
+          datasets: [
+            {
+              type: "bar",
+              label: "Silhouette Score",
+              data: gK.silhuetas,
+              backgroundColor: "#55b6ff",
+              yAxisID: "ySil",
+              borderRadius: 4,
+            },
+            {
+              type: "line",
+              label: "Inércia (WCSS / 100)",
+              data: gK.inercias.map((v) => v / 100),
+              borderColor: "#ffad66",
+              backgroundColor: "#ffad66",
+              yAxisID: "yIne",
+              tension: 0.2,
+            },
+          ],
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: "#8998aa" }, grid: { display: false } },
+            ySil: {
+              type: "linear",
+              position: "left",
+              ticks: { color: "#55b6ff" },
+              title: { display: true, text: "Silhouette Score (maior é melhor)", color: "#55b6ff" },
+            },
+            yIne: {
+              type: "linear",
+              position: "right",
+              ticks: { color: "#ffad66" },
+              grid: { color: "#263546" },
+              title: { display: true, text: "Inércia / 100 (menor é melhor)", color: "#ffad66" },
+            },
+          },
+          plugins: {
+            title: { display: true, text: "Comparação de Métricas de K=2, K=3 e K=4", color: "#e6edf5", font: { size: 13, weight: "600" } },
+            legend: { display: true, labels: { color: "#cbd6e1" } },
+          },
+        },
+      });
+    }
+
+    // 10. Justificativa de K
+    const elJust = document.getElementById("texto-justificativa-k");
+    if (elJust && resComp.justificativa_escolha) {
+      elJust.innerHTML = `
+        <p><strong>Configuração Escolhida: K = ${resComp.k_recomendado}</strong></p>
+        <p>${escaparHtml(resComp.justificativa_escolha)}</p>
+      `;
+    }
+
+    // 11. Tabela Padronizada de Médias por Cluster
+    const corpoTabela = document.getElementById("corpo-tabela-medias-clusters");
+    if (corpoTabela && resP1.clusters) {
+      corpoTabela.innerHTML = resP1.clusters.map((c) => `
+        <tr>
+          <td><strong style="color: ${c.cor};">${escaparHtml(c.nome)}</strong></td>
+          <td>${escaparHtml(c.destaque)}</td>
+          <td class="num">${c.contagem} (${c.proporcao}%)</td>
+          <td class="num">${formatar(c.medias.PTS)}</td>
+          <td class="num">${formatar(c.medias.REB)}</td>
+          <td class="num">${formatar(c.medias.AST)}</td>
+          <td class="num">${formatar(c.medias.STL)}</td>
+          <td class="num">${formatar(c.medias.BLK)}</td>
+          <td class="num">${formatar(c.medias.PF)}</td>
+          <td class="num">${formatar(c.medias.FG3M)}</td>
+        </tr>
+      `).join("");
+    }
+  }
+
+  seletorTime.addEventListener("change", atualizar);
+  seletorK.addEventListener("change", atualizar);
+  if (seletorVar) seletorVar.addEventListener("change", atualizar);
+
+  atualizar();
+}
+
+// ---------------------------------------------------------------------------
+// Projeto 2 - Parte 2: Múltiplos Algoritmos
+// ---------------------------------------------------------------------------
+
+async function carregarProjeto2Parte2() {
+  const seletorAlgo = document.getElementById("seletor-p2-algoritmo");
+  const seletorK = document.getElementById("seletor-p2-k");
+  if (!seletorAlgo || !seletorK) return;
+
+  async function atualizar() {
+    const k = seletorK.value;
+    const algoEscolhido = seletorAlgo.value;
+
+    const res = await fetch(`/api/projeto2/parte2?k=${k}`).then((r) => r.json());
+
+    // 1. Tabela comparativa dos 5 algoritmos
+    const corpoTabela = document.getElementById("corpo-tabela-algoritmos");
+    if (corpoTabela && res.comparativo) {
+      corpoTabela.innerHTML = res.comparativo.map((item) => `
+        <tr class="${item.algoritmo === algoEscolhido ? 'linha-destacada' : ''}">
+          <td><strong>${escaparHtml(item.algoritmo)}</strong></td>
+          <td>${escaparHtml(item.paradigma)}</td>
+          <td class="num">${item.clusters_identificados}</td>
+          <td class="num">${item.ruido_outliers > 0 ? `<span style="color: var(--laranja); font-weight: 700;">${item.ruido_outliers}</span>` : '0'}</td>
+          <td class="num"><strong>${formatar(item.silhouette, 4)}</strong></td>
+          <td class="num">${formatar(item.davies_bouldin, 4)}</td>
+          <td class="num">${formatar(item.calinski_harabasz, 1)}</td>
+          <td>${escaparHtml(item.geometria)}</td>
+          <td><code>${escaparHtml(item.complexidade)}</code></td>
+        </tr>
+      `).join("");
+    }
+
+    // 2. Gráfico Scatter 2D do algoritmo selecionado
+    const elScatter = document.getElementById("grafico-p2-scatter");
+    if (elScatter && typeof Chart !== "undefined" && res.scatter[algoEscolhido]) {
+      destruirGrafico("p2_scatter");
+      const pontos = res.scatter[algoEscolhido];
+      const clustersUnicos = [...new Set(pontos.map((p) => p.cluster))].sort((a, b) => a - b);
+      const cores = ["#55b6ff", "#ffad66", "#64d9a0", "#b388ff", "#ffd166", "#ff7597"];
+
+      const datasets = clustersUnicos.map((cId) => {
+        const sub = pontos.filter((p) => p.cluster === cId);
+        const ehRuido = cId === -1;
+        return {
+          label: ehRuido ? "Ruído / Outlier (DBSCAN)" : `Cluster ${cId + 1}`,
+          data: sub.map((p) => ({ x: p.x, y: p.y, pts: p.pts, time: p.time })),
+          backgroundColor: ehRuido ? "#ff6b6b" : cores[(cId >= 0 ? cId : 0) % cores.length],
+          pointRadius: ehRuido ? 6 : 4.5,
+          pointStyle: ehRuido ? "triangle" : "circle",
+        };
+      });
+
+      const elTitulo = document.getElementById("titulo-scatter-algoritmo");
+      if (elTitulo) elTitulo.textContent = `Projeção 2D — ${algoEscolhido}`;
+
+      graficos.p2_scatter = new Chart(elScatter, {
+        type: "scatter",
+        data: { datasets },
+        options: opcoesPadrao({
+          titulo: `Agrupamento Resultante: ${algoEscolhido}`,
+          eixoX: "Componente Principal 1",
+          eixoY: "Componente Principal 2",
+          xLinear: true,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.raw.time}: ${formatar(ctx.raw.pts)} PTS`,
+            },
+          },
+        }),
+      });
+    }
+
+    // 3. Gráfico de Barras: Silhouette Score dos 5 Modelos
+    const elBarrasSil = document.getElementById("grafico-p2-barras-silhueta");
+    if (elBarrasSil && typeof Chart !== "undefined" && res.comparativo) {
+      destruirGrafico("p2_barras_sil");
+      graficos.p2_barras_sil = new Chart(elBarrasSil, {
+        type: "bar",
+        data: {
+          labels: res.comparativo.map((c) => c.algoritmo),
+          datasets: [{
+            label: "Silhouette Score (Validação Intrínseca)",
+            data: res.comparativo.map((c) => c.silhouette),
+            backgroundColor: ["#55b6ff", "#64d9a0", "#ffad66", "#b388ff", "#ffd166"],
+            borderRadius: 4,
+          }],
+        },
+        options: opcoesPadrao({
+          titulo: "Comparação de Silhouette Score entre os 5 Algoritmos",
+          eixoX: "Algoritmo de Clustering",
+          eixoY: "Silhouette Score",
+          beginAtZero: true,
+        }),
+      });
+    }
+  }
+
+  seletorAlgo.addEventListener("change", atualizar);
+  seletorK.addEventListener("change", atualizar);
+
+  atualizar();
+}
+
+// ---------------------------------------------------------------------------
+// Projeto 2 - Parte 3: Análise Global da Liga NBA
+// ---------------------------------------------------------------------------
+
+async function carregarProjeto2Parte3() {
+  const seletorK = document.getElementById("seletor-p3-k");
+  if (!seletorK) return;
+
+  async function atualizar() {
+    const k = seletorK.value;
+    const res = await fetch(`/api/projeto2/parte3?k=${k}`).then((r) => r.json());
+
+    // 1. Respostas estruturadas às 6 questões do professor
+    const containerRespostas = document.getElementById("container-respostas-p3");
+    if (containerRespostas && res.perguntas_respostas) {
+      containerRespostas.innerHTML = res.perguntas_respostas.map((p) => `
+        <article class="cartao-texto">
+          <h4>Pergunta ${p.id}: ${escaparHtml(p.pergunta)}</h4>
+          <p class="cartao-paragrafo">${escaparHtml(p.resposta)}</p>
+          ${p.detalhes.length > 0 ? `
+            <ul style="margin: 8px 0; padding-left: 18px; font-size: 11.5px; color: #a0b3c6;">
+              ${p.detalhes.map((d) => `<li>${escaparHtml(d)}</li>`).join("")}
+            </ul>
+          ` : ""}
+        </article>
+      `).join("");
+    }
+
+    // 2. Gráfico 2D das 30 Equipes (PCA)
+    const elScatter = document.getElementById("grafico-p3-scatter-times");
+    if (elScatter && typeof Chart !== "undefined" && res.scatter_times) {
+      destruirGrafico("p3_scatter");
+      const cores = ["#55b6ff", "#ffad66", "#64d9a0", "#b388ff", "#ffd166"];
+      const clustersUnicos = [...new Set(res.scatter_times.map((p) => p.cluster))].sort((a, b) => a - b);
+
+      const datasets = clustersUnicos.map((cId) => {
+        const sub = res.scatter_times.filter((p) => p.cluster === cId);
+        return {
+          label: `Grupo ${cId + 1}`,
+          data: sub.map((p) => ({ x: p.x, y: p.y, time: p.time, pts: p.pts, ast: p.ast, reb: p.reb })),
+          backgroundColor: cores[cId % cores.length],
+          pointRadius: 6,
+          pointHoverRadius: 9,
+        };
+      });
+
+      graficos.p3_scatter = new Chart(elScatter, {
+        type: "scatter",
+        data: { datasets },
+        options: opcoesPadrao({
+          titulo: "Distribuição Multivariada das 30 Equipes da NBA",
+          eixoX: "Componente Principal 1 (Eficiência Ofensiva)",
+          eixoY: "Componente Principal 2 (Estilo de Jogo / Garrafão)",
+          xLinear: true,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.raw.time}: ${formatar(ctx.raw.pts)} PTS, ${formatar(ctx.raw.ast)} AST, ${formatar(ctx.raw.reb)} REB`,
+            },
+          },
+        }),
+      });
+    }
+
+    // 3. Gráfico PTS vs AST das 30 Equipes
+    const elPtsAst = document.getElementById("grafico-p3-pts-ast");
+    if (elPtsAst && typeof Chart !== "undefined" && res.scatter_times) {
+      destruirGrafico("p3_pts_ast");
+      graficos.p3_pts_ast = new Chart(elPtsAst, {
+        type: "scatter",
+        data: {
+          datasets: [{
+            label: "30 Franquias da NBA",
+            data: res.scatter_times.map((t) => ({ x: t.ast, y: t.pts, time: t.time })),
+            backgroundColor: "#55b6ff",
+            pointRadius: 6,
+          }],
+        },
+        options: opcoesPadrao({
+          titulo: "Relação Linear: Assistências vs. Pontos (r = 0,55)",
+          eixoX: "Assistências Médias por Jogo (AST)",
+          eixoY: "Pontos Médios por Jogo (PTS)",
+          xLinear: true,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.raw.time}: ${formatar(ctx.raw.x)} AST, ${formatar(ctx.raw.y)} PTS`,
+            },
+          },
+        }),
+      });
+    }
+
+    // 4. Tabela de Classificação das 30 Equipes
+    const corpoTabela = document.getElementById("corpo-tabela-p3-times");
+    if (corpoTabela && res.tabela_times) {
+      corpoTabela.innerHTML = res.tabela_times.map((t) => `
+        <tr>
+          <td><strong>${escaparHtml(t.time)}</strong></td>
+          <td><span class="etiqueta-categoria">${escaparHtml(t.cluster_nome)}</span></td>
+          <td class="num">${formatar(t.pts)}</td>
+          <td class="num">${formatar(t.reb)}</td>
+          <td class="num">${formatar(t.ast)}</td>
+          <td class="num">${formatar(t.stl)}</td>
+          <td class="num">${formatar(t.blk)}</td>
+          <td class="num">${formatar(t.pf)}</td>
+          <td class="num">${formatar(t.fg3m)}</td>
+        </tr>
+      `).join("");
+    }
+  }
+
+  seletorK.addEventListener("change", atualizar);
+  atualizar();
+}
+
+// Inicializações do Projeto 2
+configurarFiltroMenuProjetos();
+carregarProjeto2Parte1();
+carregarProjeto2Parte2();
+carregarProjeto2Parte3();
