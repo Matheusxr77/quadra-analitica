@@ -396,8 +396,8 @@ def test_diagnostico_completo_nao_usa_pyod():
 
     codigo = (
         "import sys, app\n"
-        "from tests.test_aplicacao import criar_cliente\n"
-        "assert criar_cliente().get('/api/qualidade').status_code == 200\n"
+        "cliente = app.criar_aplicacao().test_client()\n"
+        "assert cliente.get('/api/qualidade').status_code == 200\n"
         "print('pyod' in sys.modules)"
     )
     saida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True,
